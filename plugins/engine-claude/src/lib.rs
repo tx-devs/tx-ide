@@ -240,8 +240,8 @@ pub struct ClaudeOptions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClaudeAdapter {
     pub claude_home: PathBuf,
-    /// The operator's Claude settings, from this plugin's own `claude_settings`: merged into every
-    /// launch's `--settings`, under tx's own keys.
+    /// This plugin's `claude_settings` (its defaults with the operator's merged over them): the
+    /// base of every launch's `--settings` ([`launch_settings`]).
     pub claude_settings: serde_json::Map<String, Value>,
     /// Claude's JSON config file, where `prepare` marks each worktree trusted; `None` trusts
     /// nothing (tests).
@@ -259,7 +259,8 @@ pub const PLUGIN_AUTHORING_SKILL: &str = "plugin-authoring";
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
-    /// Claude settings (`settings.json` keys) every launch passes on.
+    /// Claude settings (`settings.json` keys) every launch passes on; the defaults are the
+    /// `settings` of the plugin's manifest.
     #[serde(default)]
     pub claude_settings: serde_json::Map<String, Value>,
 }
@@ -838,54 +839,104 @@ pub fn tools(profile: &Profile) -> String {
     tools.join(",")
 }
 
-/// `--settings` JSON for every launch, restating what the left-out user settings would carry:
-/// `disableBundledSkills` drops Claude's bundled skills, `autoMemoryEnabled: false` keeps
-/// auto-memory off, and `skipDangerousModePermissionPrompt` keeps
-/// `--dangerously-skip-permissions` from asking for confirmation (default answer: exit). Every
-/// [`HOOK_EVENTS`] entry is wired to `hook_command` (no hooks when it is empty).
-/// The operator's `claude_settings` come first, so tx's own keys win. Claude's bundled skills
-/// are all off (`disableBundledSkills`) unless the agent lists one, which turns the whole bundle
-/// on: Claude cannot turn them on one by one, and `tx harness check` / `tx create` say so. The built-in
+/// `--settings` JSON for every launch: `claude_settings` (the plugin's defaults with the
+/// operator's merged over them), then what tx sets itself. A `claude_settings` key that is null
+/// is left out, so Claude's own default applies. tx's own keys: `disableBundledSkills` drops
+/// Claude's bundled skills and `skipDangerousModePermissionPrompt` keeps
+/// `--dangerously-skip-permissions` from asking for confirmation (default answer: exit); these
+/// two replace the operator's. Every [`HOOK_EVENTS`] entry is wired to `hook_command` (none
+/// when it is empty) after the operator's own hooks for that event, which stay, and the
+/// operator's `enabledPlugins` stay too. Claude's bundled skills are all off
+/// (`disableBundledSkills`) unless the agent lists one, which turns the whole bundle on: Claude
+/// cannot turn them on one by one, and `tx harness check` /
+/// `tx create` say so. The built-in
 /// `plugin-authoring` plugin is off unless listed.
 pub fn launch_settings(
     claude_settings: &serde_json::Map<String, Value>,
     hook_command: &[String],
     bundled: &[&str],
 ) -> String {
-    let mut settings = Value::Object(claude_settings.clone());
+    let mut settings = claude_settings.clone();
+    settings.retain(|_, value| !value.is_null());
     for (key, value) in [
-        ("autoMemoryEnabled", false),
         ("disableBundledSkills", bundled.is_empty()),
         ("skipDangerousModePermissionPrompt", true),
     ] {
-        settings[key] = Value::Bool(value);
+        settings.insert(key.to_owned(), Value::Bool(value));
     }
     if !bundled.contains(&PLUGIN_AUTHORING_SKILL) {
-        settings["enabledPlugins"] = serde_json::json!({ PLUGIN_AUTHORING_PLUGIN: false });
+        object_at(&mut settings, "enabledPlugins")
+            .insert(PLUGIN_AUTHORING_PLUGIN.to_owned(), Value::Bool(false));
     }
     if !hook_command.is_empty() {
-        settings["hooks"] = hook_settings(hook_command);
+        let hooks = object_at(&mut settings, "hooks");
+        for (event, blocks) in hook_settings(hook_command) {
+            hooks
+                .entry(event)
+                .or_insert_with(|| Value::Array(Vec::new()))
+                .as_array_mut()
+                .expect("checked when the settings were read")
+                .extend(blocks);
+        }
     }
-    settings.to_string()
+    Value::Object(settings).to_string()
 }
 
-/// The `hooks` settings object wiring every [`HOOK_EVENTS`] entry to `hook_command`.
-fn hook_settings(hook_command: &[String]) -> Value {
-    let hooks: serde_json::Map<String, Value> = HOOK_EVENTS
+/// The mapping under `key`, made when absent. [`check_merged_keys`] has refused any other value.
+fn object_at<'a>(
+    settings: &'a mut serde_json::Map<String, Value>,
+    key: &str,
+) -> &'a mut serde_json::Map<String, Value> {
+    settings
+        .entry(key.to_owned())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .expect("checked when the settings were read")
+}
+
+/// The two `claude_settings` keys tx adds its own entries to must have the shape it merges into:
+/// `hooks` a mapping of event to a list of hook blocks, `enabledPlugins` a mapping. `null` leaves
+/// the key out. Anything else would lose the operator's entries without a word.
+pub fn check_merged_keys(claude_settings: &serde_json::Map<String, Value>) -> Result<(), String> {
+    const AT: &str = "settings.claude_settings";
+    match claude_settings.get("enabledPlugins") {
+        None | Some(Value::Null | Value::Object(_)) => {}
+        Some(other) => {
+            return Err(format!(
+                "{AT}.enabledPlugins must map a plugin to true or false, got {other}"
+            ));
+        }
+    }
+    match claude_settings.get("hooks") {
+        None | Some(Value::Null) => Ok(()),
+        Some(Value::Object(events)) => match events.iter().find(|(_, blocks)| !blocks.is_array()) {
+            None => Ok(()),
+            Some((event, blocks)) => Err(format!(
+                "{AT}.hooks.{event} must be a list of hook blocks, got {blocks}"
+            )),
+        },
+        Some(other) => Err(format!(
+            "{AT}.hooks must map an event to a list of hook blocks, got {other}"
+        )),
+    }
+}
+
+/// tx's own hook block for every [`HOOK_EVENTS`] entry, wired to `hook_command`.
+fn hook_settings(hook_command: &[String]) -> Vec<(String, Vec<Value>)> {
+    HOOK_EVENTS
         .iter()
         .map(|event| {
-            let entry = serde_json::json!([{
+            let block = serde_json::json!({
                 "matcher": "",
                 "hooks": [{
                     "type": "command",
                     "command": hook_shell_command(hook_command, event),
                     "timeout": HOOK_TIMEOUT_SECONDS,
                 }],
-            }]);
-            ((*event).to_owned(), entry)
+            });
+            ((*event).to_owned(), vec![block])
         })
-        .collect();
-    Value::Object(hooks)
+        .collect()
 }
 
 /// Claude's project-dir name for an absolute path: every `/` and `.` becomes `-`.
@@ -977,6 +1028,12 @@ impl tx_core::Plugin for ClaudePlugin {
                 }
             })?,
         };
+        check_merged_keys(&settings.claude_settings).map_err(|reason| {
+            tx_core::PluginError::Register {
+                plugin: "engine-claude".to_owned(),
+                reason,
+            }
+        })?;
         r.engine(Box::new(
             ClaudeAdapter::new(claude_home_from_env())
                 .claude_settings(settings.claude_settings)
@@ -1330,7 +1387,7 @@ mod tests {
     }
 
     /// The settings of a launch without hooks.
-    const SETTINGS: &str = r#"{"autoMemoryEnabled":false,"disableBundledSkills":true,"skipDangerousModePermissionPrompt":true,"enabledPlugins":{"cc-plugin-plugin-authoring@builtin":false}}"#;
+    const SETTINGS: &str = r#"{"disableBundledSkills":true,"skipDangerousModePermissionPrompt":true,"enabledPlugins":{"cc-plugin-plugin-authoring@builtin":false}}"#;
 
     /// The minimal-launch flags after the effort, for a profile without skills.
     const MINIMAL: [&str; 6] = [
@@ -1531,22 +1588,108 @@ mod tests {
     }
 
     #[test]
-    fn the_operators_settings_merge_under_txs_own_keys() {
-        let operator = serde_json::json!({"theme": "dark", "autoMemoryEnabled": true})
-            .as_object()
-            .unwrap()
-            .clone();
+    fn the_operators_settings_stay_except_the_keys_tx_sets_itself() {
+        let operator = serde_json::json!({
+            "theme": "dark",
+            "autoMemoryEnabled": true,
+            "disableArtifact": null,
+            "disableBundledSkills": false,
+            "skipDangerousModePermissionPrompt": false,
+            "enabledPlugins": {"mine@market": true, "cc-plugin-plugin-authoring@builtin": true},
+        })
+        .as_object()
+        .unwrap()
+        .clone();
         let settings: Value = serde_json::from_str(&launch_settings(&operator, &[], &[])).unwrap();
         assert_eq!(
             settings,
             serde_json::json!({
                 "theme": "dark",
-                "autoMemoryEnabled": false,
+                "autoMemoryEnabled": true,
                 "disableBundledSkills": true,
                 "skipDangerousModePermissionPrompt": true,
-                "enabledPlugins": {"cc-plugin-plugin-authoring@builtin": false},
-            })
+                "enabledPlugins": {
+                    "mine@market": true,
+                    "cc-plugin-plugin-authoring@builtin": false,
+                },
+            }),
+            "a null key is left out"
         );
+    }
+
+    #[test]
+    fn the_operators_hooks_run_before_txs_for_the_same_event() {
+        let mine = serde_json::json!({"matcher": "Bash", "hooks": [{"type": "command", "command": "mine"}]});
+        let operator = serde_json::json!({"hooks": {"Stop": [mine], "PreCompact": [mine]}})
+            .as_object()
+            .unwrap()
+            .clone();
+        let command = ["/tx".to_owned(), "hook".to_owned()];
+        let settings: Value =
+            serde_json::from_str(&launch_settings(&operator, &command, &[])).unwrap();
+        let stop = settings["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 2);
+        assert_eq!(stop[0], mine);
+        assert_eq!(stop[1]["matcher"], "");
+        assert_eq!(settings["hooks"]["PreCompact"], serde_json::json!([mine]));
+        assert_eq!(
+            settings["hooks"]["SessionStart"].as_array().unwrap().len(),
+            1,
+            "tx's own, alone"
+        );
+        let unwired: Value = serde_json::from_str(&launch_settings(&operator, &[], &[])).unwrap();
+        assert_eq!(unwired["hooks"], operator["hooks"]);
+    }
+
+    #[test]
+    fn hooks_and_plugins_of_the_wrong_shape_are_refused_by_name() {
+        let check = |value: Value| check_merged_keys(value.as_object().unwrap());
+        for good in [
+            serde_json::json!({}),
+            serde_json::json!({"hooks": null, "enabledPlugins": null}),
+            serde_json::json!({"hooks": {"Stop": []}, "enabledPlugins": {"a@b": true}}),
+        ] {
+            assert_eq!(check(good.clone()), Ok(()), "{good}");
+        }
+        for (bad, names) in [
+            (
+                serde_json::json!({"hooks": [1, 2]}),
+                "claude_settings.hooks must",
+            ),
+            (
+                serde_json::json!({"hooks": {"Stop": "echo x"}}),
+                "claude_settings.hooks.Stop must",
+            ),
+            (
+                serde_json::json!({"enabledPlugins": ["a"]}),
+                "claude_settings.enabledPlugins must",
+            ),
+        ] {
+            let error = check(bad.clone()).unwrap_err();
+            assert!(error.contains(names), "{bad}: {error}");
+        }
+    }
+
+    /// What ships as the defaults is a mapping of settings, and none of them is a key tx sets
+    /// itself: a default there would never take effect.
+    #[test]
+    fn the_default_settings_are_claude_settings_tx_does_not_set_itself() {
+        use tx_core::Plugin;
+        let manifest = tx_core::plugin::Manifest::read(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join(tx_core::plugin::MANIFEST_FILE),
+        )
+        .unwrap();
+        let settings: Settings = serde_json::from_value(manifest.settings).unwrap();
+        check_merged_keys(&settings.claude_settings).unwrap();
+        assert_eq!(settings.claude_settings["autoMemoryEnabled"], false);
+        for own in [
+            "disableBundledSkills",
+            "skipDangerousModePermissionPrompt",
+            "hooks",
+        ] {
+            assert!(!settings.claude_settings.contains_key(own), "{own}");
+        }
+        assert_eq!(ClaudePlugin.id(), "engine-claude");
     }
 
     #[test]

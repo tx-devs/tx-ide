@@ -3,6 +3,18 @@ id: engine-claude
 description: The Claude Code engine.
 tier: core
 needs: [claude]
+settings:
+  # Claude Code settings (`settings.json` keys) every Claude agent is launched with. Your own
+  # `claude_settings` are laid over these key by key; a key you set to null is left out of the
+  # launch, so Claude's own default applies. Your `hooks` run next to tx's, and your
+  # `enabledPlugins` are kept. tx sets `disableBundledSkills` and
+  # `skipDangerousModePermissionPrompt` itself.
+  claude_settings:
+    autoMemoryEnabled: false       # an agent starts from its definition, not from Claude's memory
+    disableArtifact: true          # deliverables are tx artifacts (`tx artifact`), not Claude's own
+    disableWorkflows: true         # agents are orchestrated through tx
+    includeGitInstructions: false  # the agent definitions carry their own git rules
+    skipAutoPermissionPrompt: true # no dialog at the start of an unattended launch
 engine:
   kind: claude
   ext_key: claude
