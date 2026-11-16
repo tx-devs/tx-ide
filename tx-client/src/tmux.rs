@@ -12,6 +12,9 @@ use tx_core::plugin::external::PLUGIN_GIVEN_ENV;
 
 use crate::views::{HOME_FLOOR_OPTION, KIND_OPTION, VIEW_OPTION, ViewKind};
 
+/// Under `<config>/nvim/`: the user's own lua file for nvim views.
+pub const NVIM_USER_FILE: &str = "tx.lua";
+
 const BINARY: &str = "tmux";
 /// The nvim runtime directory (`<data>/nvim`, `lua/` and `plugin/`), prepended to every nvim
 /// view's runtimepath by `views::open`.
@@ -65,6 +68,7 @@ pub struct Ui {
     /// The variables of this process's environment that no tmux call inherits, next to
     /// [`PLUGIN_GIVEN_ENV`], which names them: the core's `given`.
     withheld: Vec<String>,
+    nvim_user_file: PathBuf,
 }
 
 /// An exact session target for pane-typed `-t` (`show-options`, `set-option`).
@@ -89,17 +93,28 @@ impl Ui {
                 core.socket_path().to_path_buf(),
                 config.tmux_conf_path(),
                 config.directories.data.join(NVIM_RESOURCE),
+                config
+                    .directories
+                    .config
+                    .join(NVIM_RESOURCE)
+                    .join(NVIM_USER_FILE),
             )
         }
     }
 
-    /// Bound to a socket, config and nvim runtime of the caller's choosing (scratch servers in
-    /// tests).
-    pub fn new(socket: PathBuf, conf: PathBuf, nvim_runtime: PathBuf) -> Self {
+    /// Bound to a socket, config, nvim runtime and user nvim file of the caller's choosing
+    /// (scratch servers in tests).
+    pub fn new(
+        socket: PathBuf,
+        conf: PathBuf,
+        nvim_runtime: PathBuf,
+        nvim_user_file: PathBuf,
+    ) -> Self {
         Self {
             socket,
             conf,
             nvim_runtime,
+            nvim_user_file,
             withheld: Vec::new(),
         }
     }
@@ -112,6 +127,12 @@ impl Ui {
 
     pub fn nvim_runtime(&self) -> &Path {
         &self.nvim_runtime
+    }
+
+    /// The user's own lua file (`<config>/nvim/tx.lua`), which every nvim view runs after tx's
+    /// runtime when it exists.
+    pub fn nvim_user_file(&self) -> &Path {
+        &self.nvim_user_file
     }
 
     pub fn argv(&self, args: &[&str]) -> Vec<OsString> {
@@ -691,6 +712,7 @@ mod tests {
             PathBuf::from("/s/tmux.sock"),
             PathBuf::from("/s/tmux.conf"),
             PathBuf::from("/s/data/nvim"),
+            PathBuf::from("/s/config/nvim/tx.lua"),
         )
     }
 
@@ -837,7 +859,12 @@ mod tests {
             .unwrap();
         let conf = dir.path().join("tmux.conf");
         std::fs::write(&conf, "").unwrap();
-        let ui = Ui::new(dir.path().join("tmux.sock"), conf, dir.path().join("nvim"));
+        let ui = Ui::new(
+            dir.path().join("tmux.sock"),
+            conf,
+            dir.path().join("nvim"),
+            dir.path().join("config/nvim/tx.lua"),
+        );
         if ui.run(&["new-session", "-d", "-s", "t"]).is_err() {
             eprintln!("tmux not available; skipping");
             return;

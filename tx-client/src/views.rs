@@ -171,10 +171,15 @@ fn guard(ui: &Ui, name: &str) -> Result<(), ViewError> {
 }
 
 /// What a view's program runs with: `arguments`, and for nvim a startup command that puts
-/// `nvim_runtime` first on the runtimepath and sources its `plugin/tx.lua`. It is `-c`, run
-/// after the user's init, not `--cmd`: lazy.nvim resets the runtimepath during init and would
-/// drop an entry added before it.
-fn program_arguments(program: &str, arguments: &[String], nvim_runtime: &Path) -> Vec<String> {
+/// `nvim_runtime` first on the runtimepath and sources its `plugin/tx.lua`, which ends by running
+/// `nvim_user_file` when the user has one. It is `-c`, run after the user's init, not `--cmd`:
+/// lazy.nvim resets the runtimepath during init and would drop an entry added before it.
+fn program_arguments(
+    program: &str,
+    arguments: &[String],
+    nvim_runtime: &Path,
+    nvim_user_file: &Path,
+) -> Vec<String> {
     let mut words = arguments.to_vec();
     if Path::new(program)
         .file_name()
@@ -185,8 +190,12 @@ fn program_arguments(program: &str, arguments: &[String], nvim_runtime: &Path) -
             .to_string_lossy()
             .replace('\\', "\\\\")
             .replace(' ', "\\ ");
+        // A Vim literal string: only the quote itself is escaped, by doubling it.
+        let user_file = nvim_user_file.to_string_lossy().replace('\'', "''");
         words.push("-c".to_owned());
-        words.push(format!("set rtp^={runtime} | runtime plugin/tx.lua"));
+        words.push(format!(
+            "let g:tx_user_file = '{user_file}' | set rtp^={runtime} | runtime plugin/tx.lua"
+        ));
     }
     words
 }
@@ -234,7 +243,12 @@ pub fn open(ui: &Ui, request: &ViewRequest<'_>) -> Result<View, ViewError> {
         &working_directory,
         request.program,
     ];
-    let arguments = program_arguments(request.program, request.arguments, ui.nvim_runtime());
+    let arguments = program_arguments(
+        request.program,
+        request.arguments,
+        ui.nvim_runtime(),
+        ui.nvim_user_file(),
+    );
     create.extend(arguments.iter().map(String::as_str));
     ui.run(&create)?;
     let created_at = tx_core::events::now();
@@ -287,7 +301,11 @@ pub struct SplitRequest<'a> {
 }
 
 /// The `split-window` argv for `request`, printing the new pane's id.
-fn split_arguments(request: &SplitRequest<'_>, nvim_runtime: &Path) -> Vec<String> {
+fn split_arguments(
+    request: &SplitRequest<'_>,
+    nvim_runtime: &Path,
+    nvim_user_file: &Path,
+) -> Vec<String> {
     let direction = match request.direction {
         SplitDirection::Horizontal => "-h",
         SplitDirection::Vertical => "-v",
@@ -310,6 +328,7 @@ fn split_arguments(request: &SplitRequest<'_>, nvim_runtime: &Path) -> Vec<Strin
         request.program,
         request.arguments,
         nvim_runtime,
+        nvim_user_file,
     ));
     words
 }
@@ -318,7 +337,7 @@ fn split_arguments(request: &SplitRequest<'_>, nvim_runtime: &Path) -> Vec<Strin
 /// a view's first pane: separate words, no shell, and an nvim pane gets tx-client's runtime.
 /// Returns the new pane's id. A single word with spaces still goes through tmux's shell.
 pub fn split(ui: &Ui, request: &SplitRequest<'_>) -> Result<String, ViewError> {
-    let words = split_arguments(request, ui.nvim_runtime());
+    let words = split_arguments(request, ui.nvim_runtime(), ui.nvim_user_file());
     let arguments: Vec<&str> = words.iter().map(String::as_str).collect();
     Ok(ui.run(&arguments)?.trim().to_owned())
 }
@@ -566,19 +585,23 @@ mod tests {
     fn nvim_views_get_the_runtime_after_their_own_arguments() {
         let arguments = ["/a/plan.md".to_owned()];
         let runtime = Path::new("/d/tx ide/nvim");
+        let user_file = Path::new("/c/it's mine/nvim/tx.lua");
         let expected = [
             "/a/plan.md",
             "-c",
-            "set rtp^=/d/tx\\ ide/nvim | runtime plugin/tx.lua",
+            "let g:tx_user_file = '/c/it''s mine/nvim/tx.lua' | set rtp^=/d/tx\\ ide/nvim | runtime plugin/tx.lua",
         ];
-        assert_eq!(program_arguments("nvim", &arguments, runtime), expected);
         assert_eq!(
-            program_arguments("/opt/homebrew/bin/nvim", &arguments, runtime),
+            program_arguments("nvim", &arguments, runtime, user_file),
+            expected
+        );
+        assert_eq!(
+            program_arguments("/opt/homebrew/bin/nvim", &arguments, runtime, user_file),
             expected
         );
         for program in ["sh", "fake-nvim", "nvim-qt", "vim"] {
             assert_eq!(
-                program_arguments(program, &arguments, runtime),
+                program_arguments(program, &arguments, runtime, user_file),
                 arguments,
                 "{program}"
             );
@@ -607,7 +630,7 @@ mod tests {
             working_directory: Path::new("/w/proj #1"),
         };
         assert_eq!(
-            split_arguments(&request, Path::new("/d/nvim")),
+            split_arguments(&request, Path::new("/d/nvim"), Path::new("/c/nvim/tx.lua")),
             [
                 "split-window",
                 "-v",
@@ -623,7 +646,7 @@ mod tests {
                 "nvim",
                 "plan.md",
                 "-c",
-                "set rtp^=/d/nvim | runtime plugin/tx.lua",
+                "let g:tx_user_file = '/c/nvim/tx.lua' | set rtp^=/d/nvim | runtime plugin/tx.lua",
             ]
         );
         let shell = SplitRequest {
@@ -634,7 +657,7 @@ mod tests {
             ..request
         };
         assert_eq!(
-            split_arguments(&shell, Path::new("/d/nvim")),
+            split_arguments(&shell, Path::new("/d/nvim"), Path::new("/c/nvim/tx.lua")),
             [
                 "split-window",
                 "-h",
@@ -694,7 +717,12 @@ mod tests {
             .unwrap();
         let conf = dir.path().join("tmux.conf");
         std::fs::write(&conf, "").unwrap();
-        let ui = Ui::new(dir.path().join("tmux.sock"), conf, dir.path().join("nvim"));
+        let ui = Ui::new(
+            dir.path().join("tmux.sock"),
+            conf,
+            dir.path().join("nvim"),
+            dir.path().join("config/nvim/tx.lua"),
+        );
         let parent: AgentId = "11111111-2222-3333-4444-555555555555".parse().unwrap();
         // No server yet: no views, no session, and `open` below starts the server.
         match list(&ui) {
