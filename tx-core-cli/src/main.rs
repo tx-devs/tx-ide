@@ -3,9 +3,9 @@
 
 use std::io::Write;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::process::{Command, ExitCode};
 
-use tx_client::tmux::Ui;
 use tx_core::plugin::Index;
 use tx_core::plugin::external::TRACE_VERB;
 use tx_core::{
@@ -55,8 +55,11 @@ fn main() -> ExitCode {
 /// `$TX_SESSION_ID` `create_agent` set, when core knows it; else the user from the view this
 /// pane belongs to. Otherwise the user, from `--via` when given.
 fn sender_from_env(core: &TxCore, via: Option<String>) -> Result<Sender, CoreError> {
-    let ui = Ui::from_core(core);
-    if !ui.inside() {
+    let inside = std::env::var("TMUX")
+        .ok()
+        .and_then(|value| value.split(',').next().map(str::to_owned))
+        .is_some_and(|socket| !socket.is_empty() && Path::new(&socket) == core.socket_path());
+    if !inside {
         return Ok(Sender::User { via });
     }
     if let Some(id) = std::env::var("TX_SESSION_ID")
@@ -71,8 +74,7 @@ fn sender_from_env(core: &TxCore, via: Option<String>) -> Result<Sender, CoreErr
     }
     let view = std::env::var("TMUX_PANE")
         .ok()
-        .and_then(|pane| ui.display_message("#S", Some(&pane)))
-        .filter(|session| ui.is_view(session));
+        .and_then(|pane| core.view_of_pane(&pane));
     Ok(Sender::User { via: view.or(via) })
 }
 

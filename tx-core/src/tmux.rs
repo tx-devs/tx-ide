@@ -14,6 +14,9 @@ use crate::plugin::external::PLUGIN_GIVEN_ENV;
 
 /// The session option that links a tmux session to its record.
 pub const TX_ID_OPTION: &str = "@tx-id";
+/// `1` on every view: a session tx-client owns, never one of an agent. `tmux.conf` and the key
+/// plugins test for it.
+pub const VIEW_OPTION: &str = "@tx-view";
 
 #[derive(Debug, thiserror::Error)]
 pub enum TmuxError {
@@ -369,6 +372,34 @@ impl Tmux {
 
     pub fn is_live(&self, id: &AgentId) -> Result<Option<Live>, TmuxError> {
         Ok(self.list_live()?.by_id.remove(id))
+    }
+
+    /// The trimmed output of a call that may fail; `None` when it does or prints nothing.
+    fn query(&self, args: &[OsString]) -> Option<String> {
+        let output = self.output(args).ok()?;
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        (output.status.success() && !text.is_empty()).then_some(text)
+    }
+
+    /// The name of the session `pane` is in.
+    pub fn pane_session(&self, pane: &str) -> Option<String> {
+        self.query(&[
+            "display-message".into(),
+            "-t".into(),
+            pane.into(),
+            "-p".into(),
+            "#S".into(),
+        ])
+    }
+
+    /// The value of `option` on the session named exactly `name`.
+    pub fn session_option(&self, name: &str, option: &str) -> Option<String> {
+        self.query(&[
+            "show-options".into(),
+            "-vqt".into(),
+            exact_for_pane_target(name).into(),
+            option.into(),
+        ])
     }
 }
 

@@ -1826,7 +1826,6 @@ dependencies = [
  "shlex",
  "tempfile",
  "thiserror 2.0.21",
- "tx-client",
  "tx-core",
 ]
 
