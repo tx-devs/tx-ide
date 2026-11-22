@@ -6,7 +6,7 @@
 cargo build --workspace
 cargo test --workspace                                  # needs tmux on PATH
 cargo clippy --workspace --all-targets -- -D warnings
-cargo run -p tx-core-cli --bin tx -- help               # the tx binary from source
+cargo run -p tx-core --bin tx -- help                   # the tx binary from source
 ```
 
 The integration tests start real tmux servers, each on a private socket under `/tmp`, with all
@@ -15,9 +15,10 @@ never touched. Tests that need tmux skip themselves when it is not on `PATH`. Th
 enables every clippy lint group at warn level and the check runs with `-D warnings`, so a clean
 build means no clippy warnings at all.
 
-The CLI suites (`tx-core-cli/tests`) run the plugins the way an install does, as their own
-programs: `tx` links none, so there is no other way. Cargo builds another package's program only
-for that package's own tests, so the harness (`tests/common/mod.rs`, `shipped()`) runs
+The CLI suites (the `tx-core/tests` that drive the binaries) run the plugins the way an install
+does, as their own programs: `tx` links none, so there is no other way. Cargo builds another
+package's program only for that package's own tests, so the harness
+(`tests/common_cli/mod.rs`, `shipped()`) runs
 `cargo build --workspace --bins` once per test process, in the profile and target directory of
 the test itself, and links one plugin root under the target directory,
 `<target>/<profile>/tx-shipped/<id>/`, for every `plugins/<id>/plugin.yaml`: the manifest, each
@@ -90,7 +91,7 @@ template and [Writing plugins](writing-plugins.md) the reference.
 
 ```text
 plugins/notes/
-  Cargo.toml        package tx-notes; a [[bin]] named tx-notes; depends on tx-core, tx-plugin
+  Cargo.toml        package tx-notes; a [[bin]] named tx-notes; depends on tx-core
                     and, for anything that talks to tmux, tx-client
   plugin.yaml       the manifest: id, description, tier, verbs, resources
   src/lib.rs        the plugin: its `impl Plugin`, its verbs
@@ -119,7 +120,7 @@ The program hosts it:
 
 ```rust,ignore
 fn main() -> std::process::ExitCode {
-    tx_plugin::sdk::main(vec![Box::new(tx_notes::NotesPlugin)])
+    tx_core::sdk::main(vec![Box::new(tx_notes::NotesPlugin)])
 }
 ```
 
@@ -159,11 +160,11 @@ it also declares `# unset: …` and `# unhook: …` so that disabling the plugin
 finds `tx` and its flags through the server options `@tx-bin` and `@tx-arguments`, as every
 shipped fragment does. Helper scripts go in as `bin/<file>` resources.
 
-**Tests.** `tests/bundle.rs` is one call, `tx_plugin::testing::check_bundle`: the manifest
+**Tests.** `tests/bundle.rs` is one call, `tx_core::testing::check_bundle`: the manifest
 reads, every resource is a file of the package, every `bin` is a program it builds, and the
 verbs, their usages, the engine kind and the updater are what `register` produces. The plugin's
 own tests stay in-process (`core.plug(vec![Box::new(NotesPlugin)], …)`). Add a
-`tx-core-cli/tests/<id>.rs` that drives the real binaries through the `tests/common` harness:
+`tx-core/tests/<id>.rs` that drives the real binaries through the `tests/common_cli` harness:
 one temporary directory for all five directories, a private server, and `shim_path` for stand-in
 executables such as a `claude` that only sleeps. A plugin that publishes resources must also be
 listed in `tests/ide.rs::update_materialises_resources`; a new key means extending

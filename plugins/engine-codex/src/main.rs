@@ -3,5 +3,5 @@
 //! (`--tx-hook <Event>`).
 
 fn main() -> std::process::ExitCode {
-    tx_plugin::sdk::main(vec![Box::new(tx_engine_codex::CodexPlugin)])
+    tx_core::sdk::main(vec![Box::new(tx_engine_codex::CodexPlugin)])
 }

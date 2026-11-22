@@ -6,35 +6,36 @@ it, and dependencies only point downwards.
 ## The crates
 
 ```text
-tx-core-cli        tx and txi: arguments, the built-in verbs, dispatch. It links no plugin.
-    |
-tx-plugin          resolves the directories from flags and environment, reads config.yaml, opens
-    |              the core with the installed plugins; the SDK `main` of a plugin program; the
-    |              installer `tx update` lays the shipped plugins out with
-tx-core            records, lifecycle, engines (the trait and the wire format), the plugin host:
-                   manifest, index, the proxies that stand for another program's verb, engine
-                   or sink
-
 plugins/<id>       one package per plugin: a library, the program tx-<id>, plugin.yaml, resources
-tx-client          the tmux and nvim library the IDE plugins and tx share
+    |
+tx-client          the tmux and nvim library the IDE plugins share
+    |
+tx-core            the library every plugin depends on, and the tx and txi binaries:
+                   records, lifecycle, engines (the trait and the wire format), the plugin host
+                   (manifest, index, the proxies that stand for another program's verb, engine
+                   or sink), the SDK of a plugin program, and the CLI. It links no plugin.
 ```
 
-- **`tx-core`** is the library: [`TxCore`](../internal/tx_core/core/struct.TxCore.html), opened
-  once, owns the agent store, the private tmux server, the event log, the engine registry, role
-  resolution and file locks. It depends on serde, thiserror, uuid and tempfile, and nothing in
-  the workspace.
-- **`tx-plugin`** is what any program that runs as tx shares with it: the global flags, the
-  directory resolution, the `config.yaml` reader and opening the core; it depends on `tx-core`
-  alone. For a plugin written in Rust it is the SDK: `tx_plugin::sdk::main` is the whole `main`
-  of the plugin's program (see [Writing plugins](writing-plugins.md)).
-- **`tx-core-cli`** builds the two binaries on `PATH`. `tx` holds the built-in verbs (`create`,
-  `ls`, `send`, `stop`, …) and is a dispatcher for every other verb: it finds the verb among the
-  installed plugins and replaces itself with that plugin's program. `txi` is the internal entry
-  point. Neither links a plugin, an engine adapter or a resource: the package depends on
-  `tx-core`, `tx-plugin` and `tx-client`, and nothing under `plugins/`.
+- **`tx-core`** is one package, in layers by audience:
+  - [`TxCore`](../internal/tx_core/core/struct.TxCore.html), opened once, owns the agent store,
+    the private tmux server, the event log, the engine registry, role resolution and file locks.
+  - `tx_core::sdk` and `tx_core::testing` are what a plugin author uses beside the traits:
+    `tx_core::sdk::main` is the whole `main` of a plugin's program, and
+    `tx_core::testing::check_bundle` keeps its bundle honest (see
+    [Writing plugins](writing-plugins.md)).
+  - `tx_core::host` (internal) is what any program that runs as tx shares with it: the global
+    flags, the directory resolution, the `config.yaml` reader, opening the core, serving an
+    engine, and laying out the shipped plugins for `tx update`.
+  - `tx_core::cli` (internal) is `tx` and `txi`. `tx` holds the built-in verbs (`create`, `ls`,
+    `send`, `stop`, …) and help, and is a dispatcher for every other verb: it finds the verb
+    among the installed plugins and replaces itself with that plugin's program. `txi` is the
+    internal entry point. Each binary is one call into this module.
+
+  Nothing in it links a plugin, an engine adapter or a resource: it depends on serde,
+  thiserror, uuid, tempfile and shlex, and nothing in the workspace.
 - **`plugins/<id>`** are one package each (`tx-<id>`): the plugin's library, a three-line program
   that hosts it, its manifest and the files it publishes. The engine adapters (`engine-claude`,
-  `engine-codex`) depend on `tx-core` and `tx-plugin` alone. The IDE plugins also depend on
+  `engine-codex`) depend on `tx-core` alone. The IDE plugins also depend on
   `tx-client`, and a few reuse a sibling's library code: `home` and `timeline` use `tx-chat`'s
   transcript readers, `tour` uses `tx-artifacts`' store. `home-themes` has no program of its own:
   `tx-home` hosts it. `setup` is not built on the SDK: it is the installer's wizard.
@@ -44,12 +45,13 @@ tx-client          the tmux and nvim library the IDE plugins and tx share
   `tx ui attach | view` and the updater that writes the IDE's server config on `tx update`, is
   `plugins/ide`, a plugin like the others.
 
-## The library never reads the environment
+## The core never reads the environment
 
-`tx-core` never parses arguments and never touches `std::env`. Everything it needs arrives in a
+[`TxCore`](../internal/tx_core/core/struct.TxCore.html) never parses arguments and never touches
+`std::env`. Everything it needs arrives in a
 [`CoreConfig`](../internal/tx_core/config/struct.CoreConfig.html): the five directories, the
 socket path, the plugin roots, extra environment for launched sessions, and the hook command
-engines should wire. Only `tx-plugin` reads the process environment, resolves the XDG
+engines should wire. Only `tx_core::host` reads the process environment, resolves the XDG
 directories and builds the config, for `tx`, `txi` and every plugin program alike. This keeps
 the library testable in isolation (every integration test opens a core on a
 temporary directory and a private socket) and lets any program embed it:
@@ -105,7 +107,7 @@ A manifest declares up to five things:
 [`Plugin`](../internal/tx_core/plugin/trait.Plugin.html): an `id` and a `register` method that
 fills a [`Registry`](../internal/tx_core/plugin/struct.Registry.html) with verbs
 (`run(core, io, argv)`), an engine ([`LlmEngine`](../internal/tx_core/engine/trait.LlmEngine.html)),
-event sinks and updaters. Its program is three lines, `tx_plugin::sdk::main`, which opens the
+event sinks and updaters. Its program is three lines, `tx_core::sdk::main`, which opens the
 core as `tx` would, with the plugins it hosts registered in-process and a proxy for every other
 active plugin's verb, engine and sink. So `core.verb("layout")` and `core.create_agent(…)` answer
 in a plugin program as they do in `tx`. This API is the SDK; `tx` links no plugin.
@@ -169,7 +171,7 @@ options on other plugins' sessions, call into another plugin's internals, or rea
 plugin's data files. There are two ways to run a verb, for two needs:
 
 - **`TxCore::verb(name)`**, when the plugin wants the output. In a core opened through
-  `tx-plugin` it answers for every active plugin's verb, wherever that plugin runs: a verb of a
+  `tx_core::host` it answers for every active plugin's verb, wherever that plugin runs: a verb of a
   plugin the program hosts runs in-process, and any other is a proxy that starts the
   plugin's program directly (not through `tx`) with standard input closed, and hands back its
   output, its error and its exit code. `tx ui attach` uses it to hand the home pane to the `home`
@@ -178,7 +180,7 @@ plugin's data files. There are two ways to run a verb, for two needs:
 - **`$TX_BIN`**, when the plugin wants a command line: a key binding, a popup, a view, a hook.
   When the home screen stops an agent it runs `tx stop <id>`; when it opens the timeline it runs
   `tx _timeline-attach` in a popup. A plugin program is not `tx`, so it takes the path from
-  `tx_plugin::sdk::tx_bin()` (the `tx` that started it); `std::env::current_exe()` is right only
+  `tx_core::sdk::tx_bin()` (the `tx` that started it); `std::env::current_exe()` is right only
   for its own verbs.
 
 The payoff is that any plugin can be disabled, or not installed at all, without breaking the
@@ -187,8 +189,8 @@ transcript parser in `tx-chat`) is fine.
 
 ## `tx` and `txi`
 
-Both binaries share `tx-core-cli`'s library: argument parsing, the plugin switchboard and opening
-the core. `tx` is what people type. `txi` is what machines run: nothing in it is listed in
+Both binaries are one call each into `tx_core::cli`: argument parsing, help, the plugin
+switchboard and opening the core. `tx` is what people type. `txi` is what machines run: nothing in it is listed in
 `tx help`, and its one verb is `txi hook <Event>`. When an engine launches an agent it
 wires the engine CLI's own hook mechanism (Claude through `--settings`, Codex through
 `-c hooks.<Event>=…`) to a hook command: its own program when its manifest names one, as both
@@ -210,7 +212,7 @@ every session and every plugin program carries.
 The `engine` section of a manifest names a program that speaks the engine protocol: one JSON
 request per line on its standard input, one response per line on its standard output ([Writing
 plugins](writing-plugins.md#an-engine) is the reference). In every core opened through
-`tx-plugin`, the engine of an active plugin is registered as a proxy,
+`tx_core::host`, the engine of an active plugin is registered as a proxy,
 [`ProcessEngine`](../internal/tx_core/plugin/external/struct.ProcessEngine.html); only the
 engine's own program has the adapter in its process, and the rest of core cannot tell the two
 apart. Engine kinds are open names: `tx engines` lists the ones an active engine provides, and a
@@ -253,7 +255,7 @@ do an engine plugin of your own and the stand-in engine of the tests.
 Every operation that changes an agent emits events: core appends each to `<data>/log.jsonl`,
 then hands it to every sink subscribed in the process, once the record is saved and every lock
 released. A sink registered in-process is a function call. The `on-event` program of an active
-installed plugin is subscribed in every core opened through `tx-plugin`, after the in-process
+installed plugin is subscribed in every core opened through `tx_core::host`, after the in-process
 ones, as an [`ExecSink`](../internal/tx_core/plugin/sink/struct.ExecSink.html): for each event of
 a type it lists, it starts the program, writes the event as one JSON line (the detail whole,
 where the log cuts its line at 512 bytes) and waits for it, up to the manifest's timeout. So the

@@ -4,9 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "A plain core for a swarm of interactive agents on a private tmux server."
+description = "A plain core for a swarm of interactive agents on a private tmux server, the library every tx plugin depends on, and the tx and txi binaries."
+default-run = "tx"
 
 [dependencies]
+shlex = "2"
 serde.workspace = true
 serde_json.workspace = true
 serde_norway.workspace = true
@@ -28,6 +30,10 @@ fuzz = []
 
 [[test]]
 name = "fuzz_api"
+required-features = ["fuzz"]
+
+[[test]]
+name = "fuzz_cli"
 required-features = ["fuzz"]
 
 [[test]]

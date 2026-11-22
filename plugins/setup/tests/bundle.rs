@@ -5,7 +5,7 @@ use std::path::Path;
 
 #[test]
 fn the_manifest_reads_and_names_the_program() {
-    let manifest = tx_plugin::testing::check_manifest(Path::new(env!("CARGO_MANIFEST_DIR")));
+    let manifest = tx_core::testing::check_manifest(Path::new(env!("CARGO_MANIFEST_DIR")));
     assert_eq!(manifest.id, "setup");
     assert_eq!(manifest.bins(), ["tx-setup"]);
 }

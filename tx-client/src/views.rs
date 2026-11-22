@@ -10,8 +10,7 @@ use tx_core::{AgentId, CoreError, TxCore};
 
 use crate::tmux::{Ui, UiError};
 
-/// `1` on every view; `tmux.conf` and the key plugins test for it.
-pub const VIEW_OPTION: &str = "@tx-view";
+pub use tx_core::tmux::VIEW_OPTION;
 pub const KIND_OPTION: &str = "@tx-view-kind";
 /// `1` on the home view's floor pane: the pane the home plugin keeps its TUI in.
 pub const HOME_FLOOR_OPTION: &str = "@tx-home-floor";

@@ -28,6 +28,29 @@ pub mod index;
 pub mod manifest;
 pub mod sink;
 
+/// The built-in verbs of `tx`. A plugin's verb of one of these names is never run: an installed
+/// plugin loses it with a problem, one hosted in a program is refused.
+pub const RESERVED_VERBS: &[&str] = &[
+    "help",
+    "engines",
+    "plugins",
+    "create",
+    "fork",
+    "respawn",
+    "ls",
+    "show",
+    "rename",
+    "tag",
+    "send",
+    "where",
+    "attach",
+    "stop",
+    "interrupt",
+    "gc",
+    "update",
+    "harness",
+];
+
 pub use external::{ExecContext, Launcher};
 pub use index::{
     Activation, ActiveVerb, Entry, Index, Installed, PluginState, Problem, ShippedStamp,

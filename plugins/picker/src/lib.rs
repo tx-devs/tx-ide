@@ -448,7 +448,7 @@ fn open_popup(core: &TxCore, ui: &Ui, name: &str) -> Result<bool, VerbError> {
         return Ok(false);
     };
     // tmux runs this later, after the picker's popup has closed: it starts with `tx`.
-    let mut words = vec![shell_quote(&tx_plugin::sdk::tx_bin().to_string_lossy())];
+    let mut words = vec![shell_quote(&tx_core::sdk::tx_bin().to_string_lossy())];
     words.extend(
         core.config()
             .cli_arguments()
@@ -574,7 +574,7 @@ fn own_command(core: &TxCore) -> Result<String, VerbError> {
 fn tx_command(core: &TxCore) -> String {
     format!(
         "{} {}",
-        tx_plugin::sdk::tx_bin().display(),
+        tx_core::sdk::tx_bin().display(),
         core.config().cli_arguments().join(" ")
     )
 }

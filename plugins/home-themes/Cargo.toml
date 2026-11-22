@@ -16,7 +16,6 @@ fastrand = "2"
 
 [dev-dependencies]
 tempfile.workspace = true
-tx-plugin.workspace = true
 
 [lints]
 workspace = true

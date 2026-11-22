@@ -9,7 +9,7 @@ use tx_engine_claude::{ClaudeAdapter, ClaudePlugin};
 
 #[test]
 fn the_manifest_matches_the_plugin() {
-    tx_plugin::testing::check_bundle(
+    tx_core::testing::check_bundle(
         Path::new(env!("CARGO_MANIFEST_DIR")),
         vec![Box::new(ClaudePlugin)],
     );
@@ -20,7 +20,7 @@ fn the_manifest_matches_the_plugin() {
 /// what an agent of the engine compiled into `tx` gets.
 #[test]
 fn the_manifest_says_what_the_adapter_answers() {
-    let manifest = tx_plugin::testing::check_manifest(Path::new(env!("CARGO_MANIFEST_DIR")));
+    let manifest = tx_core::testing::check_manifest(Path::new(env!("CARGO_MANIFEST_DIR")));
     let engine = manifest.engine.unwrap();
     let adapter = ClaudeAdapter::new("/nowhere");
     assert_eq!(engine.ext_key, adapter.ext_key());

@@ -17,7 +17,7 @@ use crate::messaging::{DELIVERY_PAUSE, EnvelopeSender, build_envelope, deliver};
 use crate::profile::{Profile, Profiles, ResolvedProfile};
 use crate::state::{IdleReason, LlmEngineHook, LlmEngineState, state_label};
 use crate::store::{AgentStore, SkippedRecord, StoreError};
-use crate::tmux::{Live, Tmux, TmuxError, exact};
+use crate::tmux::{Live, Tmux, TmuxError, VIEW_OPTION, exact};
 use crate::worktree::WorktreeManager;
 
 pub const LOCKS_DIR: &str = "locks";
@@ -546,6 +546,13 @@ impl TxCore {
 
     pub fn socket_path(&self) -> &Path {
         self.tmux.socket()
+    }
+
+    /// The view `pane` is in, when it is in one: a session marked [`VIEW_OPTION`].
+    pub fn view_of_pane(&self, pane: &str) -> Option<String> {
+        let session = self.tmux.pane_session(pane)?;
+        let marked = self.tmux.session_option(&session, VIEW_OPTION).as_deref() == Some("1");
+        marked.then_some(session)
     }
 
     pub fn register_engine(&mut self, adapter: Box<dyn LlmEngine>) -> Result<(), CoreError> {
