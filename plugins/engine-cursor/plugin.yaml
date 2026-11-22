@@ -1,0 +1,13 @@
+api: 1
+id: engine-cursor
+description: The Cursor engine.
+tier: core
+needs: [cursor-agent]
+engine:
+  kind: cursor
+  ext_key: cursor
+  bin: tx-engine-cursor
+  args: [--tx-engine]
+  hook: { bin: tx-engine-cursor, args: [--tx-hook] }
+  methods: [archive, restore, check]
+  interrupt: { key: C-c, state: idle }

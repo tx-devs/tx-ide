@@ -309,6 +309,8 @@ impl EngineKind {
     pub const CLAUDE: EngineKind = EngineKind::constant("claude");
     /// The kind the Codex engine provides.
     pub const CODEX: EngineKind = EngineKind::constant("codex");
+    /// The kind the Cursor engine provides.
+    pub const CURSOR: EngineKind = EngineKind::constant("cursor");
 
     /// `None` unless `name` is `[a-z0-9-]{1,31}`.
     const fn new(name: &str) -> Option<Self> {
