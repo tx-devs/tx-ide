@@ -65,7 +65,7 @@ fn usage_errors_exit_2_without_touching_state() {
 #[test]
 fn engines_are_registered() {
     let cli = Cli::new();
-    assert_eq!(cli.ok(&["engines"]), "claude\ncodex\n");
+    assert_eq!(cli.ok(&["engines"]), "claude\ncodex\ncursor\n");
     assert!(cli.state().join("tmux.conf").is_file());
 }
 
@@ -92,7 +92,7 @@ fn core_errors_exit_1() {
     );
     assert_eq!(
         stderr,
-        "tx: engine codex is not enabled (enabled: claude)\n"
+        "tx: engine codex is not enabled (enabled: claude, cursor)\n"
     );
     // Any name is an engine kind; one no active engine provides fails at launch, with the kinds
     // that are provided, and leaves no record and no worktree.
@@ -106,7 +106,7 @@ fn core_errors_exit_1() {
         arguments.extend_from_slice(&["--prompt", "start"]);
         assert_eq!(
             cli.fails(&arguments, 1),
-            "tx: engine kodex is not enabled (enabled: claude, codex)\n"
+            "tx: engine kodex is not enabled (enabled: claude, codex, cursor)\n"
         );
     }
     assert_eq!(cli.ok(&["ls"]), "");
@@ -129,19 +129,19 @@ fn a_disabled_engine_plugin_leaves_its_kind_unregistered_but_its_records_listed(
     let id = "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f2";
     common_cli::plant_record(&cli, id, "old-codex", "codex");
     cli.write_yaml("plugins:\n  engine-codex: { enabled: false }\n");
-    assert_eq!(cli.ok(&["engines"]), "claude\n");
+    assert_eq!(cli.ok(&["engines"]), "claude\ncursor\n");
     assert!(cli.ok(&["plugins"]).contains("engine-codex\tdisabled"));
     let listed = cli.ok(&["ls", "--ended"]);
     assert!(listed.contains("old-codex"), "{listed}");
     assert!(cli.ok(&["show", "old-codex"]).contains("\"codex\""));
     assert_eq!(
         cli.fails(&["respawn", "old-codex"], 1),
-        "tx: engine codex is not enabled (enabled: claude)\n"
+        "tx: engine codex is not enabled (enabled: claude, cursor)\n"
     );
     // Re-enabled, the engine check passes and the Codex adapter itself answers: this record
     // never got a conversation to resume.
     cli.write_yaml("plugins:\n  engine-codex: { enabled: true }\n");
-    assert_eq!(cli.ok(&["engines"]), "claude\ncodex\n");
+    assert_eq!(cli.ok(&["engines"]), "claude\ncodex\ncursor\n");
     let stderr = cli.fails(&["respawn", "old-codex"], 1);
     assert!(stderr.contains("codex cannot resume old-codex"), "{stderr}");
 }
@@ -164,7 +164,7 @@ fn a_record_of_a_kind_no_engine_provides_lists_and_cannot_be_respawned() {
     );
     assert_eq!(
         cli.fails(&["respawn", "elsewhere"], 1),
-        "tx: engine kodex is not enabled (enabled: claude, codex)\n"
+        "tx: engine kodex is not enabled (enabled: claude, codex, cursor)\n"
     );
 }
 
