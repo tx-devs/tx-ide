@@ -92,7 +92,7 @@ pub const NOTES: [&str; 1] =
     ["cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)"];
 
 /// What every launch carries that no tx option removes (cursor-agent 2026.11.22).
-pub const FORCED: [&str; 6] = [
+pub const FORCED: [&str; 8] = [
     "Cursor's own system prompt and built-in tools: the profile is an always-applied rule beside \
      them, and no built-in tool can be switched off",
     "the workspace's AGENTS.md, CLAUDE.md, .cursorrules and .cursor/rules",
@@ -101,6 +101,10 @@ pub const FORCED: [&str; 6] = [
      given Cursor's payloads: Cursor imports them and has no switch to stop it",
     "the user's Claude Code plugins, which Cursor loads as its own",
     "the AskQuestion tool, whose dialog fires no hook: the agent shows working while it waits",
+    "the worktree's .cursor/hooks.json, replaced by tx's on every launch: a project's own hooks \
+     there do not run",
+    "after tx interrupt, the interrupted prompt put back in the input: the next message is \
+     appended to it (clear it with C-u, once per line)",
 ];
 
 /// Cursor's directory: `CURSOR_CONFIG_DIR`, else `$HOME/.cursor`. Chats live under
@@ -430,8 +434,11 @@ impl LlmEngine for CursorAdapter {
         let chat = self
             .chat_directory(&session.working_directory)
             .join(conversation);
-        let Ok(entries) = std::fs::read_dir(&chat) else {
-            return Ok(());
+        let entries = match std::fs::read_dir(&chat) {
+            Ok(entries) => entries,
+            // A process that never opened its chat leaves none.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(source) => return Err(EngineError::Io { path: chat, source }),
         };
         let archived_chat = archive_directory.join(conversation);
         for entry in entries {

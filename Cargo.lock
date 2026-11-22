@@ -1870,7 +1870,6 @@ dependencies = [
  "md-5",
  "serde",
  "serde_json",
- "tempfile",
  "tx-core",
 ]
 
