@@ -316,7 +316,7 @@ pub fn resident_session(repository: &Repository) -> String {
 
 /// `<tx> <cli_arguments> <arguments>`, as argv.
 fn tx_argv(core: &TxCore, arguments: &[&str]) -> Vec<String> {
-    let mut words = vec![tx_plugin::sdk::tx_bin().to_string_lossy().into_owned()];
+    let mut words = vec![tx_core::sdk::tx_bin().to_string_lossy().into_owned()];
     words.extend(core.config().cli_arguments().iter().cloned());
     words.extend(arguments.iter().map(|word| (*word).to_owned()));
     words

@@ -180,7 +180,7 @@ fn ensure_resident(core: &TxCore, ui: &Ui) -> Result<(), VerbError> {
     if ui.has_session(POPUP_SESSION) {
         return Ok(());
     }
-    let program = tx_plugin::sdk::tx_bin();
+    let program = tx_core::sdk::tx_bin();
     let mut arguments = core.config().cli_arguments().to_vec();
     arguments.push(RESIDENT_VERB.to_owned());
     views::open(

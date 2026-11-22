@@ -405,7 +405,7 @@ struct Txc {
 impl Txc {
     fn current(core: &TxCore) -> Self {
         Txc {
-            exe: tx_plugin::sdk::tx_bin(),
+            exe: tx_core::sdk::tx_bin(),
             arguments: core.config().cli_arguments(),
         }
     }

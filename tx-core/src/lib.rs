@@ -1,5 +1,8 @@
 //! tx-core: run and manage a swarm of interactive agents, each a process in a detached session
 //! on tx's own tmux server.
+//!
+//! For a plugin author: implement [`Plugin`] (its [`Verb`]s, [`Updater`], [`LlmEngine`]) and make
+//! [`sdk::main`] the whole `main` of the plugin's program; [`testing`] keeps its bundle honest.
 
 pub mod agent;
 pub mod config;
@@ -11,6 +14,9 @@ pub mod events;
 pub mod harness;
 /// Internal; no stability promise for plugin authors.
 #[doc(hidden)]
+pub mod host;
+/// Internal; no stability promise for plugin authors.
+#[doc(hidden)]
 pub mod locks;
 /// Internal; no stability promise for plugin authors.
 #[doc(hidden)]
@@ -19,15 +25,20 @@ pub mod mirror;
 pub mod plugin;
 pub mod profile;
 pub mod roles;
+pub mod sdk;
 pub mod state;
 /// Internal; no stability promise for plugin authors.
 #[doc(hidden)]
 pub mod store;
+pub mod testing;
 /// Internal; no stability promise for plugin authors.
 #[doc(hidden)]
 pub mod tmux;
 pub mod updates;
 pub mod worktree;
+
+/// The version of this tx. The plugin index is trusted only by the version that wrote it.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub use agent::{Agent, AgentId, DefinitionChoice, RecordError, validate_name};
 pub use config::{AgentDefaults, CoreConfig, Directories, MAX_SOCKET_PATH_BYTES};

@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-use tx_plugin::bundle::Selection;
+use tx_core::host::bundle::Selection;
 
 /// A source of bundles and the directories of one install, in a temporary directory.
 struct Sandbox {
@@ -196,7 +196,7 @@ fn a_preset_is_recorded_printed_and_seeds_the_config_once() {
         ),
         "{plugins}"
     );
-    let config = tx_plugin::config::parse(&text, &sandbox.config_file()).unwrap();
+    let config = tx_core::host::user_config::parse(&text, &sandbox.config_file()).unwrap();
     assert_eq!(config.plugins.len(), 4);
 
     // A second run changes the selection and leaves the file alone.

@@ -91,13 +91,13 @@ mod tests {
     #[test]
     fn the_file_reads_as_the_built_in_defaults_with_the_settings_of_the_manifests() {
         let file = Path::new("config.yaml");
-        let config = tx_plugin::config::parse(&seeded(), file).unwrap();
-        let defaults = tx_plugin::config::parse("", file).unwrap();
+        let config = tx_core::host::user_config::parse(&seeded(), file).unwrap();
+        let defaults = tx_core::host::user_config::parse("", file).unwrap();
         assert_eq!(config.agent, defaults.agent);
         assert_eq!(config.worktree, defaults.worktree);
         let ids: Vec<&str> = config.plugins.keys().map(String::as_str).collect();
         assert_eq!(ids, ["assistant", "kill"]);
-        let entries = tx_plugin::config::entries(&config.plugins);
+        let entries = tx_core::host::user_config::entries(&config.plugins);
         assert!(entries.values().all(|entry| entry.enabled));
         assert_eq!(
             entries["assistant"].settings,
@@ -110,7 +110,7 @@ mod tests {
     fn no_plugin_is_an_empty_mapping() {
         let text = text([]);
         assert!(text.ends_with("plugins: {}\n"), "{text}");
-        let config = tx_plugin::config::parse(&text, Path::new("config.yaml")).unwrap();
+        let config = tx_core::host::user_config::parse(&text, Path::new("config.yaml")).unwrap();
         assert!(config.plugins.is_empty());
     }
 

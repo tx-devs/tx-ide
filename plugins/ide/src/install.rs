@@ -10,12 +10,12 @@ use std::process::Stdio;
 use tx_client::tmux::{Ui, UiError};
 use tx_client::views::{self, ViewKind, ViewRequest};
 use tx_core::core::DEFAULT_TMUX_CONF;
+use tx_core::host::bundle::KEYS_INSTALLED;
+use tx_core::host::setup::ROLES_DIR;
 use tx_core::plugin::manifest::RESOURCE_KINDS;
+use tx_core::sdk::TX_BIN_ENV;
 use tx_core::updates::Outcome;
 use tx_core::{TxCore, Updater, Verb, VerbError, VerbIo};
-use tx_plugin::bundle::KEYS_INSTALLED;
-use tx_plugin::sdk::TX_BIN_ENV;
-use tx_plugin::setup::ROLES_DIR;
 
 use crate::view_verb;
 
@@ -358,7 +358,7 @@ fn retire(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
 
 fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
     // Canonical: the config holds one spelling of the binary, whatever way `tx` was invoked.
-    let exe = tx_plugin::sdk::tx_bin()
+    let exe = tx_core::sdk::tx_bin()
         .canonicalize()
         .map_err(|e| VerbError::Failed(format!("cannot resolve the tx binary: {e}")))?;
     let config = core.config();

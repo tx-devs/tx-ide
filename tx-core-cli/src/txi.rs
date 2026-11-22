@@ -19,17 +19,18 @@ txi is tx's internal entry point; people use tx.
 fn main() -> ExitCode {
     // First thing: `tx` is the binary installed next to this one.
     if let Ok(exe) = std::env::current_exe() {
-        tx_plugin::sdk::set_tx_bin(exe.with_file_name(tx_core_cli::setup::TX));
+        tx_core::sdk::set_tx_bin(exe.with_file_name(tx_core_cli::setup::TX));
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         // Extra arguments are ignored, not refused: a hook must never fail over its own
         // command line. The engine of the session may be a plugin's program: it is started
-        // before the session lock is taken (`tx_plugin::engine::hook`).
+        // before the session lock is taken (`tx_core::host::engine_program::hook`).
         Some("hook") => {
-            match tx_plugin::engine::hook(args.get(1).cloned().unwrap_or_default(), || {
-                open(&Global::default())
-            }) {
+            match tx_core::host::engine_program::hook(
+                args.get(1).cloned().unwrap_or_default(),
+                || open(&Global::default()),
+            ) {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(error) => {
                     eprintln!("txi: {error}");

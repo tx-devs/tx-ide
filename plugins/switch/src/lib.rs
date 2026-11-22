@@ -9,8 +9,8 @@ pub mod list;
 use std::process::Stdio;
 use std::sync::Arc;
 
+use tx_core::host::args::Global;
 use tx_core::{Plugin, PluginError, Registry, TxCore, Verb, VerbError, VerbIo};
-use tx_plugin::args::Global;
 
 pub const PLUGIN_ID: &str = "switch";
 
@@ -78,7 +78,7 @@ impl Verb for Switch {
 
 /// Writes `changes` into the config file, then runs `tx update` and passes its output on.
 fn apply(core: &TxCore, io: &mut VerbIo<'_>, changes: &[(String, bool)]) -> Result<i32, VerbError> {
-    let path = tx_plugin::setup::config_file(&Global::default(), core.config());
+    let path = tx_core::host::setup::config_file(&Global::default(), core.config());
     let mut text = match std::fs::read_to_string(&path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
         read => read.map_err(|error| failed(format!("{}: {error}", path.display())))?,
@@ -86,8 +86,8 @@ fn apply(core: &TxCore, io: &mut VerbIo<'_>, changes: &[(String, bool)]) -> Resu
     for (id, enabled) in changes {
         text = edit::set_enabled(&text, id, *enabled);
     }
-    let entries = tx_plugin::config::entries(
-        &tx_plugin::config::parse(&text, &path)
+    let entries = tx_core::host::user_config::entries(
+        &tx_core::host::user_config::parse(&text, &path)
             .map_err(failed)?
             .plugins,
     );
@@ -104,7 +104,7 @@ fn apply(core: &TxCore, io: &mut VerbIo<'_>, changes: &[(String, bool)]) -> Resu
     for (id, enabled) in changes {
         let _ = writeln!(io.stdout, "{id}: {}", if *enabled { "on" } else { "off" });
     }
-    let output = std::process::Command::new(tx_plugin::sdk::tx_bin())
+    let output = std::process::Command::new(tx_core::sdk::tx_bin())
         .args(core.config().cli_arguments())
         .arg("update")
         .stdin(Stdio::null())

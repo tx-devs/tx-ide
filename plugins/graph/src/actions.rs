@@ -26,7 +26,7 @@ pub struct Tx {
 impl Tx {
     pub fn current(core: &TxCore) -> Self {
         Self {
-            program: tx_plugin::sdk::tx_bin(),
+            program: tx_core::sdk::tx_bin(),
             arguments: core.config().cli_arguments().to_vec(),
         }
     }

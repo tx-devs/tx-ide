@@ -3,7 +3,7 @@
 //!
 //! ```ignore
 //! fn main() -> std::process::ExitCode {
-//!     tx_plugin::sdk::main(vec![Box::new(tx_kill::KillPlugin)])
+//!     tx_core::sdk::main(vec![Box::new(tx_kill::KillPlugin)])
 //! }
 //! ```
 //!
@@ -16,10 +16,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::OnceLock;
 
-use tx_core::{Event, Plugin, VerbIo};
+use crate::{Event, Plugin, VerbIo};
 
-use crate::args::{Global, parse_global};
-use crate::setup::{Failure, Installation, process_environment};
+use crate::host::args::{Global, parse_global};
+use crate::host::setup::{Failure, Installation, process_environment};
 
 /// The absolute path of the `tx` that ran this program: the only way a plugin runs tx again.
 pub const TX_BIN_ENV: &str = "TX_BIN";
@@ -80,9 +80,9 @@ pub fn tx_bin() -> PathBuf {
 ///   [`RESPAWN_LINE`] is printed when one asks for a respawn.
 /// - `--tx-engine`: the engine a hosted plugin registers is served on standard input and
 ///   output, one request and one response per line, until the input ends (see
-///   [`crate::engine::serve`]). No core is opened.
+///   [`crate::host::engine_program::serve`]). No core is opened.
 /// - `--tx-hook <Event>`: the hook entry of the hosted engine, what the hooks it wires run when
-///   its manifest names this program under `hook:` (see [`crate::engine::hook`]). It exits 0
+///   its manifest names this program under `hook:` (see [`crate::host::engine_program::hook`]). It exits 0
 ///   for a hook that is not tx's and 1, never more, when it fails: a hook must not block the
 ///   agent.
 /// - `--tx-event`: one event, the JSON line an `on-event` program reads, is read from standard
@@ -129,10 +129,12 @@ fn run(program: &str, arguments: &[String], hosted: Vec<Box<dyn Plugin>>) -> u8 
             return 2;
         }
         Some(PROBE) => return 0,
-        Some(ENGINE) => crate::engine::serve_hosted(program, &global, &hosted),
+        Some(ENGINE) => crate::host::engine_program::serve_hosted(program, &global, &hosted),
         Some(HOOK) => {
             let event = arguments.get(first + 1).cloned().unwrap_or_default();
-            return hook_exit(crate::engine::hook_hosted(&global, hosted, event));
+            return hook_exit(crate::host::engine_program::hook_hosted(
+                &global, hosted, event,
+            ));
         }
         Some(EVENT) => event(program, &global, &hosted, &mut std::io::stdin().lock()),
         Some(UPDATE) => {
@@ -283,8 +285,8 @@ mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
 
-    use tx_core::updates::Outcome;
-    use tx_core::{PluginError, Registry, TxCore, Updater, Verb, VerbError};
+    use crate::updates::Outcome;
+    use crate::{PluginError, Registry, TxCore, Updater, Verb, VerbError};
 
     /// What the hosted plugin of these tests did, in order.
     type Seen = Arc<Mutex<Vec<String>>>;
@@ -566,7 +568,7 @@ mod tests {
     #[test]
     fn the_hook_entry_exits_0_or_1_whatever_failed() {
         assert_eq!(hook_exit(Ok(())), 0);
-        let misuse = Failure::Usage(crate::args::UsageError("config.yaml: bad".to_owned()));
+        let misuse = Failure::Usage(crate::host::args::UsageError("config.yaml: bad".to_owned()));
         assert_eq!(hook_exit(Err(misuse)), 1);
         assert_eq!(hook_exit(Err(Failure::Environment("bad".to_owned()))), 1);
     }

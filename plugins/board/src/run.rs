@@ -301,7 +301,7 @@ fn start_agent(
     app.notice = Some(format!("starting an agent on #{number}…"));
     terminal.draw(|frame| ui::render(app, frame))?;
     let words = create_words(checkout, issue);
-    let output = std::process::Command::new(tx_plugin::sdk::tx_bin())
+    let output = std::process::Command::new(tx_core::sdk::tx_bin())
         .args(context.core.config().cli_arguments())
         .args(&words)
         .env_remove("TX_SESSION_ID")

@@ -8,12 +8,12 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use tx_core::config::SHIPPED_PLUGINS_DIR;
+use tx_core::host::bundle::Stamp;
+use tx_core::host::setup::{Failure, Installation};
+use tx_core::host::user_config::RETIRED;
 use tx_core::plugin::manifest::{BIN_DIR, MANIFEST_FILE};
 use tx_core::plugin::{Manifest, PluginStatus};
 use tx_core::{roles, updates};
-use tx_plugin::bundle::Stamp;
-use tx_plugin::config::RETIRED;
-use tx_plugin::setup::{Failure, Installation};
 
 /// What a plugin check found.
 pub struct Report {
@@ -213,12 +213,12 @@ impl Checking<'_> {
                 self.problems += 1;
                 writeln!(self.out, "{error}").ok();
             }
-            Ok(Some(stamp)) if stamp.tx_version != tx_plugin::VERSION => self.problem(
+            Ok(Some(stamp)) if stamp.tx_version != tx_core::VERSION => self.problem(
                 &shipped,
                 format!(
                     "plugins are from tx {}, this is tx {}: run install --upgrade",
                     stamp.tx_version,
-                    tx_plugin::VERSION
+                    tx_core::VERSION
                 ),
             ),
             Ok(Some(_)) => {}

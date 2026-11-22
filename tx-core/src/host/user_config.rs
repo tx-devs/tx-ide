@@ -24,10 +24,10 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
+pub use crate::AgentDefaults;
 use serde::Deserialize;
-pub use tx_core::AgentDefaults;
 
-use crate::args::UsageError;
+use crate::host::args::UsageError;
 
 pub const FILE_NAME: &str = "config.yaml";
 
@@ -138,11 +138,11 @@ fn yes() -> bool {
 
 /// The entries as core's activation reads them: every id of the file, on or off, with its
 /// settings (`Null` without any).
-pub fn entries(plugins: &BTreeMap<String, Entry>) -> BTreeMap<String, tx_core::plugin::Entry> {
+pub fn entries(plugins: &BTreeMap<String, Entry>) -> BTreeMap<String, crate::plugin::Entry> {
     plugins
         .iter()
         .map(|(id, entry)| {
-            let entry = tx_core::plugin::Entry {
+            let entry = crate::plugin::Entry {
                 enabled: entry.enabled,
                 settings: entry.settings.clone().unwrap_or_default(),
             };
@@ -154,7 +154,7 @@ pub fn entries(plugins: &BTreeMap<String, Entry>) -> BTreeMap<String, tx_core::p
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tx_core::EngineKind;
+    use crate::EngineKind;
 
     fn parse_text(text: &str) -> Result<Config, UsageError> {
         parse(text, Path::new("/c/config.yaml"))

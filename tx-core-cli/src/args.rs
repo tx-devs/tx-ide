@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+pub use tx_core::host::args::{Global, UsageError};
+use tx_core::host::args::{env_pair, parse_global};
 use tx_core::{CoreError, EngineKind};
-pub use tx_plugin::args::{Global, UsageError};
-use tx_plugin::args::{env_pair, parse_global};
 
 pub const USAGE: &str = "\
 usage: tx [--config-dir DIR] [--data-dir DIR] [--state-dir DIR] [--cache-dir DIR] [--run-dir DIR] [--socket PATH]

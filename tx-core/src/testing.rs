@@ -3,10 +3,10 @@
 
 use std::path::Path;
 
+use crate::plugin::manifest::{BIN_DIR, MANIFEST_FILE};
+use crate::plugin::{Manifest, Registry};
+use crate::{CoreConfig, Directories, Plugin};
 use serde_json::Value;
-use tx_core::plugin::manifest::{BIN_DIR, MANIFEST_FILE};
-use tx_core::plugin::{Manifest, Registry};
-use tx_core::{CoreConfig, Directories, Plugin};
 
 /// Checks the bundle in `directory`, a plugin's package or any plugin directory, and returns
 /// its manifest. It is the whole test of a plugin whose program is not built on the SDK, or
@@ -144,8 +144,8 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use tx_core::updates::Outcome;
-    use tx_core::{PluginError, TxCore, Updater, Verb, VerbError, VerbIo};
+    use crate::updates::Outcome;
+    use crate::{PluginError, TxCore, Updater, Verb, VerbError, VerbIo};
 
     /// A plugin `notes` that registers the verbs `notes` and `_notes-view`, and an updater when
     /// asked to.

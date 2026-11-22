@@ -6,13 +6,13 @@ use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tx_core::plugin::external::PLUGIN_GIVEN_ENV;
-use tx_core::plugin::external::TRACE_HOOK;
-use tx_core::plugin::{Activation, Entry, ExecContext, Index, Launcher};
-use tx_core::{CoreConfig, CoreError, Directories, Plugin, PluginConfig, Registry, TxCore};
+use crate::plugin::external::PLUGIN_GIVEN_ENV;
+use crate::plugin::external::TRACE_HOOK;
+use crate::plugin::{Activation, Entry, ExecContext, Index, Launcher};
+use crate::{CoreConfig, CoreError, Directories, Plugin, PluginConfig, Registry, TxCore};
 
-use crate::args::{self, Global};
-use crate::config::Config;
+use crate::host::args::{self, Global};
+use crate::host::user_config::Config;
 use crate::sdk::{self, TX_BIN_ENV};
 
 /// Renames all five directories at once, as `NVIM_APPNAME` does for nvim.
@@ -44,14 +44,14 @@ pub const PLUGIN_TRACE_ENV: &str = "TX_PLUGIN_TRACE";
 pub enum Failure {
     Usage(args::UsageError),
     Core(CoreError),
-    Plugin(tx_core::PluginError),
-    Verb(tx_core::VerbError),
+    Plugin(crate::PluginError),
+    Verb(crate::VerbError),
     /// The environment names an invalid application or leaves a directory unresolvable.
     Environment(String),
     /// A definition file that cannot be read where a listing needs it.
-    Harness(tx_core::harness::HarnessError),
+    Harness(crate::harness::HarnessError),
     /// An update step, or the stamp it keeps, failed.
-    Update(tx_core::updates::UpdateError),
+    Update(crate::updates::UpdateError),
 }
 
 impl From<CoreError> for Failure {
@@ -323,7 +323,7 @@ pub fn core_config_in(
         if names_a_directory(global) {
             return None;
         }
-        environment(tx_core::core::TMUX_SOCKET_ENV).map(PathBuf::from)
+        environment(crate::core::TMUX_SOCKET_ENV).map(PathBuf::from)
     });
     if let Some(socket) = socket.filter(|socket| *socket != config.socket_path()) {
         config = config.tmux_socket(socket);
@@ -364,7 +364,12 @@ fn config_file_in(
         .clone()
         .or_else(|| environment(CONFIG_FILE_ENV).map(PathBuf::from))
         .map(absolute)
-        .unwrap_or_else(|| config.directories.config.join(crate::config::FILE_NAME))
+        .unwrap_or_else(|| {
+            config
+                .directories
+                .config
+                .join(crate::host::user_config::FILE_NAME)
+        })
 }
 
 /// What a plugin program is started with, for a `config` that [`core_config`] resolved from
@@ -401,7 +406,7 @@ fn exec_context_in(
         set(key, directory.to_string_lossy().into_owned());
     }
     set(
-        tx_core::core::TMUX_SOCKET_ENV,
+        crate::core::TMUX_SOCKET_ENV,
         config.socket_path().to_string_lossy().into_owned(),
     );
     if let Some(roots) = &config.plugin_dirs {
@@ -452,7 +457,7 @@ fn exec_context_in(
 
 /// The config file; reads it, creates nothing.
 pub fn load_config(global: &Global, config: &CoreConfig) -> Result<Config, Failure> {
-    crate::config::load(&config_file(global, config)).map_err(Failure::Usage)
+    crate::host::user_config::load(&config_file(global, config)).map_err(Failure::Usage)
 }
 
 /// What this installation holds, resolved once per invocation: the core config, `config.yaml`,
@@ -476,9 +481,9 @@ impl Installation {
     /// [`Self::read`] from an already resolved config.
     pub fn read_with(global: &Global, config: CoreConfig) -> Result<Self, Failure> {
         let file = load_config(global, &config)?;
-        let entries = crate::config::entries(&file.plugins);
+        let entries = crate::host::user_config::entries(&file.plugins);
         let index = Index::read(&config, crate::VERSION);
-        let activation = Activation::new(&index, &entries, crate::RESERVED_VERBS);
+        let activation = Activation::new(&index, &entries, crate::plugin::RESERVED_VERBS);
         Ok(Self {
             config,
             file,
@@ -593,7 +598,7 @@ impl Installation {
                     (!settings.is_null()).then(|| (plugin.id().to_owned(), settings.clone()))
                 })
                 .collect(),
-            reserved: crate::RESERVED_VERBS
+            reserved: crate::plugin::RESERVED_VERBS
                 .iter()
                 .map(|verb| (*verb).to_owned())
                 .collect(),

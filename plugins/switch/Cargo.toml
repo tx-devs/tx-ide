@@ -13,7 +13,6 @@ path = "src/main.rs"
 
 [dependencies]
 tx-core.workspace = true
-tx-plugin.workspace = true
 ratatui = "0.30"
 
 [lints]

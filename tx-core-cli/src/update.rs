@@ -11,11 +11,11 @@ use std::process::{ExitCode, Stdio};
 use std::sync::Arc;
 
 use tx_core::config::SHIPPED_PLUGINS_DIR;
+use tx_core::host::bundle::{self, Program, Source, Stamp};
 use tx_core::plugin::{Installed, Launcher, ManifestProgram, PLUGIN_API, PluginState};
+use tx_core::sdk::{RESPAWN_LINE, RETIRE_ENV};
 use tx_core::updates::{self, Applied};
 use tx_core::{CoreConfig, Directories, PluginStatus, roles};
-use tx_plugin::bundle::{self, Program, Source, Stamp};
-use tx_plugin::sdk::{RESPAWN_LINE, RETIRE_ENV};
 
 use crate::args::{Global, UsageError};
 use crate::setup::{Failure, Installation, absolute, core_config, exec_context};
@@ -293,7 +293,7 @@ fn ship(
         probe(global, config, &shipped, &report.programs)?;
     }
     let stamp = Stamp {
-        tx_version: tx_plugin::VERSION.to_owned(),
+        tx_version: tx_core::VERSION.to_owned(),
         api: PLUGIN_API,
         bundles: source.bundles.clone(),
         binaries: source.binaries.clone(),

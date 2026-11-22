@@ -1,7 +1,7 @@
-//! `<config>/config.yaml`: read by `tx_plugin::config`, so that a plugin program reads it as `tx`
+//! `<config>/config.yaml`: read by `tx_core::host::user_config`, so that a plugin program reads it as `tx`
 //! does.
 
-pub use tx_plugin::config::*;
+pub use tx_core::host::user_config::*;
 
 #[cfg(test)]
 mod tests {

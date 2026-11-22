@@ -3,7 +3,7 @@
 //! enabled.
 
 fn main() -> std::process::ExitCode {
-    tx_plugin::sdk::main(vec![
+    tx_core::sdk::main(vec![
         Box::new(tx_home::HomePlugin),
         Box::new(tx_home_themes::HomeThemesPlugin),
     ])

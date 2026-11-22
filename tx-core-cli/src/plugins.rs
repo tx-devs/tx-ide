@@ -1,16 +1,16 @@
 //! The plugin switchboard: what `tx plugins` lists, and the warning about shipped plugins that
-//! are not this tx's. The `plugins:` section of `config.yaml` is read by `tx_plugin::config`.
+//! are not this tx's. The `plugins:` section of `config.yaml` is read by `tx_core::host::user_config`.
 
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
+use tx_core::host::setup::Installation;
+pub use tx_core::host::user_config::{Entry, RETIRED};
 use tx_core::plugin::{Index, Manifest, ShippedStamp};
 use tx_core::{Directories, PluginStatus, updates};
-pub use tx_plugin::config::{Entry, RETIRED};
-use tx_plugin::setup::Installation;
 
 /// The built-in verbs; a plugin may not provide one of these.
-pub const RESERVED: &[&str] = tx_plugin::RESERVED_VERBS;
+pub const RESERVED: &[&str] = tx_core::plugin::RESERVED_VERBS;
 
 /// Where a listed plugin comes from: the first plugin root, or any other root.
 pub const SHIPPED: &str = "shipped";
@@ -23,7 +23,7 @@ pub const USER: &str = "user";
 pub fn warn_if_shipped_differ(index: &Index, directories: &Directories) {
     match &index.shipped {
         None => {}
-        Some(ShippedStamp::By(version)) if version == tx_plugin::VERSION => {}
+        Some(ShippedStamp::By(version)) if version == tx_core::VERSION => {}
         Some(ShippedStamp::By(version)) => {
             eprintln!("tx: shipped plugins are from tx {version}: run install --upgrade");
         }

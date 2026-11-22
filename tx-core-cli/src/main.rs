@@ -22,7 +22,7 @@ fn main() -> ExitCode {
     // First thing: the plugin programs and the sessions this run starts are told which `tx`
     // this is.
     if let Ok(exe) = std::env::current_exe() {
-        tx_plugin::sdk::set_tx_bin(exe);
+        tx_core::sdk::set_tx_bin(exe);
     }
     let args: Result<Vec<String>, args::UsageError> = std::env::args_os()
         .skip(1)
@@ -260,7 +260,7 @@ fn run(invocation: Invocation) -> Result<ExitCode, Failure> {
         invocation.verb,
         Verb::HarnessList { .. } | Verb::HarnessCheck { .. }
     ) {
-        let index = Index::read(&config, tx_plugin::VERSION);
+        let index = Index::read(&config, tx_core::VERSION);
         warn_if_shipped_differ(&index, &config.directories);
     }
     match &invocation.verb {

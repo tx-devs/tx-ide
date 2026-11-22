@@ -1,7 +1,7 @@
-//! Opening the core for `tx` and `txi`: `tx_plugin::setup`, with no plugin hosted in the process.
+//! Opening the core for `tx` and `txi`: `tx_core::host::setup`, with no plugin hosted in the process.
 
 use tx_core::TxCore;
-pub use tx_plugin::setup::*;
+pub use tx_core::host::setup::*;
 
 use crate::args::Global;
 

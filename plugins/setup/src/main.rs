@@ -16,8 +16,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use tx_core::config::SHIPPED_PLUGINS_DIR;
-use tx_plugin::args::{Global, parse_global};
-use tx_plugin::bundle::Selection;
+use tx_core::host::args::{Global, parse_global};
+use tx_core::host::bundle::Selection;
 
 use presets::{Bundles, FULL, PRESETS_DIR, Presets};
 
@@ -205,7 +205,7 @@ fn upgrade(
 
 fn run(arguments: &[String]) -> Result<ExitCode, Failure> {
     let arguments = parse(arguments)?;
-    let config = tx_plugin::setup::core_config(&arguments.global).map_err(failed)?;
+    let config = tx_core::host::setup::core_config(&arguments.global).map_err(failed)?;
     let directories = &config.directories;
     let (bundles, skipped) = Bundles::read(&arguments.bundles)
         .map_err(|error| failed(format!("{}: {error}", arguments.bundles.display())))?;
@@ -261,7 +261,9 @@ fn run(arguments: &[String]) -> Result<ExitCode, Failure> {
 
     choice.selection.write(&shipped).map_err(failed)?;
     if arguments.mode != Mode::Upgrade {
-        let file = directories.config.join(tx_plugin::config::FILE_NAME);
+        let file = directories
+            .config
+            .join(tx_core::host::user_config::FILE_NAME);
         let selected = choice
             .selection
             .plugins

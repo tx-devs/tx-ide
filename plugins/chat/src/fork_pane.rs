@@ -59,7 +59,7 @@ fn ask(core: &TxCore, pane: &str, client: &str) -> Result<i32, VerbError> {
         return Ok(0);
     };
     let command = background_command(
-        &tx_plugin::sdk::tx_bin(),
+        &tx_core::sdk::tx_bin(),
         &core.config().cli_arguments(),
         pane,
         client,

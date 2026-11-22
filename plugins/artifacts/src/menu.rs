@@ -411,7 +411,7 @@ impl Nav<'_> {
     /// server's environment, which knows neither the directories nor the socket. It starts with
     /// `tx`, not with this program: tmux runs it later.
     fn tx_command(&self, argv: &[&str]) -> String {
-        let mut words = vec![shell_quote(&tx_plugin::sdk::tx_bin().to_string_lossy())];
+        let mut words = vec![shell_quote(&tx_core::sdk::tx_bin().to_string_lossy())];
         words.extend(
             self.core
                 .config()

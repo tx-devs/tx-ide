@@ -5,16 +5,16 @@
 use std::ffi::OsString;
 use std::io::{BufRead, Read, Write};
 
+use crate::core::SESSION_ID_ENV;
+use crate::engine::ToolsRequest;
+use crate::engine::wire::{Call, Failure as Refusal, Interrupted, Reply, ToolsReport};
+use crate::{AgentId, CoreError, LlmEngine, LlmEngineHook, LlmEngineState, Plugin, TxCore};
 use serde::Serialize;
-use tx_core::core::SESSION_ID_ENV;
-use tx_core::engine::ToolsRequest;
-use tx_core::engine::wire::{Call, Failure as Refusal, Interrupted, Reply, ToolsReport};
-use tx_core::{AgentId, CoreError, LlmEngine, LlmEngineHook, LlmEngineState, Plugin, TxCore};
 
-use crate::args::Global;
-use crate::setup::{Failure, Installation, process_environment};
+use crate::host::args::Global;
+use crate::host::setup::{Failure, Installation, process_environment};
 
-/// Answers the engine protocol for `engine` (see [`tx_core::engine::wire`]): one request per
+/// Answers the engine protocol for `engine` (see [`crate::engine::wire`]): one request per
 /// line of `requests`, one response per line of `responses`, in order, until the requests end.
 /// A line that is not a request, or that names a method this server does not have, is answered
 /// with a refusal: the server never stops over what it is asked, only when it can no longer
@@ -164,7 +164,7 @@ fn hook_in(
     let hook = LlmEngineHook {
         name: event,
         payload: read_payload(payload),
-        at: tx_core::events::now(),
+        at: crate::events::now(),
     };
     match core.hook(&id, hook) {
         Ok(_) | Err(CoreError::NotFound(_)) => Ok(()),
@@ -205,16 +205,16 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};
 
-    use serde_json::{Value, json};
-    use std::collections::BTreeMap;
-    use tx_core::engine::wire::{Definitions, Launch, Record, Sender};
-    use tx_core::engine::{DefinitionsRequest, EngineCheck, EngineTools, Finding};
-    use tx_core::{
+    use crate::engine::wire::{Definitions, Launch, Record, Sender};
+    use crate::engine::{DefinitionsRequest, EngineCheck, EngineTools, Finding};
+    use crate::{
         Agent, EngineError, EngineKind, IdleReason, Input, Key, LaunchPlan, LaunchRequest,
         LlmEngineChange, PluginError, Registry, WorkspaceAction,
     };
+    use serde_json::{Value, json};
+    use std::collections::BTreeMap;
 
-    use crate::args::parse_global;
+    use crate::host::args::parse_global;
 
     /// What the engine of these tests was asked, in order.
     type Seen = Arc<Mutex<Vec<String>>>;
@@ -287,7 +287,7 @@ mod tests {
             Ok(LaunchPlan::new("test-cli").arg("--fork"))
         }
 
-        fn receive_message(&self, sender: &tx_core::EnvelopeSender<'_>, text: &str) -> Input {
+        fn receive_message(&self, sender: &crate::EnvelopeSender<'_>, text: &str) -> Input {
             self.note(format!("receive_message {sender:?}"));
             Input::Text {
                 text: format!("[{text}]"),
@@ -586,7 +586,7 @@ mod tests {
     #[test]
     fn what_an_engine_adds_is_answered_in_the_shape_its_caller_reads() {
         let (engine, seen) = engine();
-        let agents = vec![tx_core::engine::AgentSummary {
+        let agents = vec![crate::engine::AgentSummary {
             name: "mine".to_owned(),
             path: "/c/agents/mine.md".into(),
             tools: Vec::new(),
@@ -596,7 +596,7 @@ mod tests {
         }];
         let definitions = Definitions {
             agents: agents.clone(),
-            skills: [("pdf".to_owned(), tx_core::SkillProvider::ClaudeBundled)]
+            skills: [("pdf".to_owned(), crate::SkillProvider::ClaudeBundled)]
                 .into_iter()
                 .collect(),
             cache: "/cache".into(),
