@@ -1,5 +1,5 @@
 //! The Cursor engine for tx-core: `cursor-agent [--new-session-id ID | --resume ID]
-//! [--model M[effort=E]] [--plugin-dir <cwd>/.cursor/tx-plugin] --force --trust --approve-mcps
+//! [--model M] [--plugin-dir <cwd>/.cursor/tx-plugin] --force --trust --approve-mcps
 //! --disable-auto-update [prompt]` (cursor-agent 2026.11.22), with the per-launch files written
 //! into the worktree:
 //!
@@ -17,7 +17,7 @@
 //!
 //! ```json
 //! {"conversation_id": "5f0c…", "transcript_path": "/Users/w/.cursor/projects/Users-w-repo/agent-transcripts/5f0c…/5f0c….jsonl",
-//!  "model": "gpt-5.3-codex", "effort": "high"}
+//!  "model": "gpt-5.3-codex-high"}
 //! ```
 //!
 //! A start names its chat after the tx session id (`--new-session-id`, hidden but honoured), so
@@ -25,9 +25,10 @@
 //! `workspaceOpen`, which names none), and the transcript path hooks report stays `null` until
 //! the first tool. A `/new` inside the TUI is picked up from the next hook's `conversation_id`.
 //!
-//! `model`, `effort`, `command` and `args` are launch options. Cursor has no effort flag: the
-//! effort is a parameter of the model id (`gpt-5.3-codex[effort=high]`), so an effort needs a
-//! model, and the word goes through unchecked (each model has its own set, known to the server).
+//! `model`, `command` and `args` are launch options. Cursor has no effort: it is part of the
+//! model id (`gpt-5.3-codex-high`), and the CLI refuses the bracket parameters its help
+//! advertises (`gpt-5.3-codex[effort=high]`: "Cannot use this model"). `effort` is accepted, so
+//! that `agent.effort` in `config.yaml` does not refuse every launch, and dropped ([`NOTES`]).
 //!
 //! A fork is refused: Cursor has no fork, and a copied chat keeps its source's id inside
 //! `store.db`. `archive` keeps the transcript (`<archive>/<id>.jsonl`, by offset) and, once the
@@ -53,7 +54,6 @@ pub const EXT_KEY: &str = "cursor";
 pub const CONVERSATION_ID_KEY: &str = "conversation_id";
 pub const TRANSCRIPT_PATH_KEY: &str = "transcript_path";
 pub const MODEL_KEY: &str = "model";
-pub const EFFORT_KEY: &str = "effort";
 pub const COMMAND_KEY: &str = "command";
 
 pub const NEW_SESSION_ID_FLAG: &str = "--new-session-id";
@@ -87,6 +87,10 @@ pub const HOOK_EVENTS: [&str; 6] = [
     "stop",
 ];
 
+/// What `tx harness ls` prints for every agent of this engine; the manifest says the same.
+pub const NOTES: [&str; 1] =
+    ["cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)"];
+
 /// What every launch carries that no tx option removes (cursor-agent 2026.11.22).
 pub const FORCED: [&str; 6] = [
     "Cursor's own system prompt and built-in tools: the profile is an always-applied rule beside \
@@ -112,9 +116,9 @@ pub struct CursorAdapter {
 pub struct CursorOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// A word the model takes (`low`, `high`, …) or a tx level `1`–`5`.
+    /// Accepted and dropped: Cursor's effort is part of the model id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effort: Option<String>,
+    pub effort: Option<Value>,
     /// The program started in place of [`CURSOR_BIN`], given tx's whole argument list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
@@ -135,17 +139,6 @@ pub fn project_slug(working_directory: &Path) -> String {
         }
     }
     slug.trim_end_matches('-').to_owned()
-}
-
-/// `model[effort=E]`, or `effort=E` added to the parameters a model id already has.
-pub fn model_argument(model: &str, effort: Option<&str>) -> String {
-    match effort {
-        None => model.to_owned(),
-        Some(effort) => match model.strip_suffix(']') {
-            Some(parameters) => format!("{parameters},effort={effort}]"),
-            None => format!("{model}[effort={effort}]"),
-        },
-    }
 }
 
 /// `{"version":1,"hooks":{"<event>":[{"command":"<hook command> <event>"}]}}`.
@@ -243,17 +236,8 @@ impl CursorAdapter {
         }
         let data = engine_data(self, request.session);
         let option = |key: &str| data.get(key).and_then(Value::as_str);
-        match (option(MODEL_KEY), option(EFFORT_KEY)) {
-            (Some(model), effort) => {
-                args.extend([MODEL_FLAG.to_owned(), model_argument(model, effort)]);
-            }
-            (None, Some(effort)) => {
-                return Err(EngineError::Refused(format!(
-                    "cursor: effort {effort:?} needs a model (cursor takes effort as a \
-                     parameter of the model id)"
-                )));
-            }
-            (None, None) => {}
+        if let Some(model) = option(MODEL_KEY) {
+            args.extend([MODEL_FLAG.to_owned(), model.to_owned()]);
         }
         let working_directory = &request.session.working_directory;
         let mut workspace = Vec::new();
@@ -335,11 +319,7 @@ impl LlmEngine for CursorAdapter {
         }
         let options: CursorOptions = serde_json::from_value(options.clone())
             .map_err(|error| EngineError::Refused(format!("cursor options: {error}")))?;
-        for (key, value) in [
-            (MODEL_KEY, &options.model),
-            (EFFORT_KEY, &options.effort),
-            (COMMAND_KEY, &options.command),
-        ] {
+        for (key, value) in [(MODEL_KEY, &options.model), (COMMAND_KEY, &options.command)] {
             if value.as_deref() == Some("") {
                 return Err(EngineError::Refused(format!(
                     "cursor options: {key} must not be empty"
@@ -352,10 +332,6 @@ impl LlmEngine for CursorAdapter {
             .unwrap_or_default();
         if let Some(model) = options.model {
             data.insert(MODEL_KEY.into(), model.into());
-        }
-        if let Some(effort) = options.effort {
-            let word = tx_core::effort_word(&effort).map_or(effort.clone(), str::to_owned);
-            data.insert(EFFORT_KEY.into(), word.into());
         }
         if let Some(command) = options.command {
             data.insert(COMMAND_KEY.into(), command.into());
@@ -501,6 +477,10 @@ impl LlmEngine for CursorAdapter {
             restored = true;
         }
         Ok(restored)
+    }
+
+    fn notes(&self) -> Vec<String> {
+        NOTES.iter().map(|note| (*note).to_owned()).collect()
     }
 
     fn check(&self, request: &DefinitionsRequest<'_>) -> Result<EngineCheck, EngineError> {

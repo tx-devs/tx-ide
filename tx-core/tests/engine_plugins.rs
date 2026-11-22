@@ -323,7 +323,9 @@ fn what_the_engines_add_is_what_their_programs_report() {
     assert_eq!(code, 0);
     assert!(
         out.contains(
-            "mine\ttest\n# claude adds to every agent's tools: Skill, ToolSearch\n\nskills:"
+            "mine\ttest\n# claude adds to every agent's tools: Skill, ToolSearch\n\
+             # cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)\n\
+             \nskills:"
         ),
         "{out}"
     );
@@ -364,6 +366,7 @@ fn what_the_engines_add_is_what_their_programs_report() {
         out,
         format!(
             "# claude adds to every agent's tools: Skill, ToolSearch\n\
+             # cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)\n\
              {mine}:5: warning: bundled skill pdf brings in all bundled skills: pdf, and any \
              others this Claude version ships\nok: 1 agents, 0 skills, 0 MCP servers\n"
         )

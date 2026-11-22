@@ -11,3 +11,4 @@ engine:
   hook: { bin: tx-engine-cursor, args: [--tx-hook] }
   methods: [archive, restore, check]
   interrupt: { key: C-c, state: idle }
+  notes: ["cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)"]
