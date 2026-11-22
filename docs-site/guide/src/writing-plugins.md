@@ -294,7 +294,7 @@ Like a verb, a kind belongs to the first plugin in plugin order that declares it
 
 ### An example: the stand-in engine
 
-The engine tx's own tests run on, `tx-core-cli/tests/fixtures/engine-fake/`. It stands for no
+The engine tx's own tests run on, `tx-core/tests/fixtures/engine-fake/`. It stands for no
 real agent: every launch is `sleep 600`, and hooks fired by hand move the agent. Its manifest:
 
 ```yaml
@@ -564,11 +564,11 @@ which is then the one program the create starts.
 ## A plugin in Rust: the SDK
 
 A plugin crate keeps the in-process API: its `impl Plugin` with `register`, its `Verb`s
-(`run(core, io, argv)`) and its `Updater`. With `tx-plugin` as a dependency it gains a program:
+(`run(core, io, argv)`) and its `Updater`. With `tx-core` as its dependency it gains a program:
 
 ```rust,ignore
 fn main() -> std::process::ExitCode {
-    tx_plugin::sdk::main(vec![Box::new(tx_mockup::MockupPlugin)])
+    tx_core::sdk::main(vec![Box::new(tx_mockup::MockupPlugin)])
 }
 ```
 
@@ -582,7 +582,7 @@ verbs:
     args: [mockup]
 ```
 
-`tx_plugin::sdk::main(hosted)` reads `[global flags] <first> [rest…]`:
+`tx_core::sdk::main(hosted)` reads `[global flags] <first> [rest…]`:
 
 | first | does |
 |---|---|
@@ -614,7 +614,7 @@ verbs:
   ```
 - Because the program resolves the core itself, it can be run directly for its own verbs,
   without `tx` in front: `tx-mockup --data-dir … mockup show`.
-- `tx_plugin::sdk::tx_bin()` is the `tx` that started the program. Command lines the plugin
+- `tx_core::sdk::tx_bin()` is the `tx` that started the program. Command lines the plugin
   builds for tmux (keys, popups, views), for another plugin's verb or for a built-in start with
   it; `std::env::current_exe()` is right only for the plugin's own verbs.
 - What the program is asked wrongly it reports under its own name, as above. What goes wrong in
@@ -627,7 +627,7 @@ keeps the manifest honest:
 ```rust,ignore
 #[test]
 fn the_manifest_matches_the_plugin() {
-    tx_plugin::testing::check_bundle(
+    tx_core::testing::check_bundle(
         Path::new(env!("CARGO_MANIFEST_DIR")),
         vec![Box::new(tx_mockup::MockupPlugin)],
     );

@@ -252,13 +252,13 @@ Five directories, XDG style (on macOS too), named after the application: `tx-ide
 cargo test --workspace                                  # needs tmux and git; private sockets
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --features fuzz                  # the slow property-based suites too
-cargo run -p tx-core-cli -- help                        # the tx binary
+cargo run -p tx-core -- help                            # the tx binary
 ```
 
-One Cargo workspace: `tx-core`, the library (records, lifecycle, messaging, the harness, the
-plugin host; it never parses arguments or reads the environment); `tx-client`, the tmux and nvim
-layer and the `ide` plugin; one crate per plugin under `plugins/`; and `tx-core-cli`, which builds
-`tx` and `txi` (the entry point the engines' hooks run). The architecture, writing an engine or a
+One Cargo workspace: `tx-core`, the library every plugin depends on (records, lifecycle,
+messaging, the harness, the plugin host, the plugin SDK) and the `tx` and `txi` binaries (`txi`
+is the entry point the engines' hooks run); `tx-client`, the tmux and nvim layer the IDE plugins
+share; and one crate per plugin under `plugins/`. The architecture, writing an engine or a
 plugin, and every file are in the guide; it and the API docs are built from `docs-site/` (see
 `docs-site/README.md`).
 
