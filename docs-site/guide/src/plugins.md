@@ -11,6 +11,7 @@ tier `ide`, and `full`, the default, adds tier `extra`.
 |---|---|---|
 | `engine-claude` | core | `tx-engine-claude` |
 | `engine-codex` | core | `tx-engine-codex` |
+| `engine-cursor` | core | `tx-engine-cursor` |
 | `artifacts` | core | `tx-artifacts` |
 | `chat` | core | `tx-chat` |
 | `kill` | core | `tx-kill` |
@@ -84,6 +85,19 @@ switches (`--disable shell_tool`, `-c web_search="disabled"`, …). Codex has no
 files, not a tool); `tx harness check --engine codex` lists what cannot be separated or removed. Codex picks its own conversation id, so it arrives with the first `SessionStart`;
 until then a resume or fork is refused. Without a `model` option Codex runs your configured
 default.
+
+**`engine-cursor`** runs the Cursor CLI: `cursor-agent [--new-session-id ID | --resume ID]
+[--model M[effort=E]] --force --trust --approve-mcps --disable-auto-update`. The chat is named
+after the tx agent id, so `conversation_id` and `transcript_path` are known before the process
+starts. Cursor takes no per-run hooks or system prompt, so each launch writes them into the
+worktree: tx's hooks as `.cursor/hooks.json` (a project file, because the TUI fires its turn hooks
+only when one defines them), the profile as the always-applied rule `.cursor/rules/tx-profile.mdc`,
+granted skills as links under `.cursor/skills/`, and the definition's MCP servers as a plugin under
+`.cursor/tx-plugin/` passed with `--plugin-dir`. Effort is a parameter of the model id, so an effort
+needs a `model`. Ctrl-C interrupts a turn. A fork is refused: Cursor has none. `archive` keeps the
+transcript and, once the agent ended, the chat's `store.db`; `restore` puts them back before a
+resume. Cursor has no tool switches, and it also runs your `~/.cursor` servers and hooks and the
+Claude Code hooks of `~/.claude/settings.json`; `tx harness check --engine cursor` lists them.
 
 ## The IDE
 

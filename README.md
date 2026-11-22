@@ -42,7 +42,7 @@ tx ui attach                    # the IDE: the home
 
 Needs Rust 1.92+, tmux, jq and git. What else depends on the plugins you take: each one names the
 programs it runs (`fzf`, `nvim`, an engine CLI: `claude`, the default engine and the assistant's,
-or `codex`), and `install` warns about every one that a selected plugin needs and `PATH` does
+`codex` or `cursor-agent`), and `install` warns about every one that a selected plugin needs and `PATH` does
 not have.
 
 **Which plugins.** tx's features are plugins, and an install takes a selection of them. A plugin
@@ -201,7 +201,7 @@ optional:
 
 ```yaml
 agent:                         # defaults for `tx create`; a flag given replaces its key
-  engine: claude               # claude | codex
+  engine: claude               # claude | codex | cursor
   roles: []                    # empty: the definition's own `roles`
   definition: developer        # the agent definition without --agent; null: roles alone
   model: claude-opus-5-5       # null: the engine's own default
