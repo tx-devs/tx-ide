@@ -1813,20 +1813,10 @@ dependencies = [
  "serde_json",
  "serde_norway",
  "sha2",
- "tempfile",
- "thiserror 2.0.21",
- "uuid",
-]
-
-[[package]]
-name = "tx-core-cli"
-version = "0.1.0"
-dependencies = [
- "serde_json",
  "shlex",
  "tempfile",
  "thiserror 2.0.21",
- "tx-core",
+ "uuid",
 ]
 
 [[package]]

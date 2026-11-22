@@ -20,7 +20,7 @@
 #      there is none (an existing file is yours and is never touched)
 #   3. cargo build --release: tx, txi and the program of every selected plugin, into
 #      $CARGO_TARGET_DIR (default <repo>/target)
-#   4. cargo install --path tx-core-cli --locked: tx and txi into $CARGO_INSTALL_ROOT/bin
+#   4. cargo install --path tx-core --locked: tx and txi into $CARGO_INSTALL_ROOT/bin
 #      (default ~/.cargo/bin), from the versions Cargo.lock pins. Nothing else goes on PATH
 #   5. tx update --bundles <repo>/plugins --binaries <target>/release: the selected plugins under
 #      <data>/shipped, the pending update steps, the published resources, each plugin's updater
@@ -344,7 +344,7 @@ fi
 # Everything is built before `tx` is replaced, so the time in which the new `tx` has no plugins
 # yet is the copy and the update.
 header "Build (cargo build --release, into $TARGET)"
-build_arguments=(build --release --manifest-path "$MANIFEST" -p tx-core-cli)
+build_arguments=(build --release --manifest-path "$MANIFEST" -p tx-core)
 for id in $SELECTED; do
   build_arguments+=(-p "tx-$id")
 done
@@ -363,11 +363,11 @@ fi
 # --locked: without it `cargo install --path` ignores Cargo.lock and resolves the dependencies
 # afresh, and tx would be built from other versions than the plugins' programs of step 3. With
 # it the step also reuses what step 3 built.
-header "tx and txi (cargo install --path $REPO/tx-core-cli)"
+header "tx and txi (cargo install --path $REPO/tx-core)"
 if ((DRY_RUN)); then
-  would "$CARGO_BIN/tx, $CARGO_BIN/txi" "run: cargo install --path $REPO/tx-core-cli --force --locked"
+  would "$CARGO_BIN/tx, $CARGO_BIN/txi" "run: cargo install --path $REPO/tx-core --force --locked"
 else
-  if cargo install --path "$REPO/tx-core-cli" --force --locked 2>&1 | sed 's/^/    /'; then
+  if cargo install --path "$REPO/tx-core" --force --locked 2>&1 | sed 's/^/    /'; then
     ok "$CARGO_BIN/tx, $CARGO_BIN/txi" "installed"
   else
     fail "cargo install" "failed"
@@ -635,7 +635,7 @@ ${B}Your own config:${X}
     the old setup/iterm.sh installed; nothing to redo.
 
 ${B}Undo:${X}
-  ${D}cargo uninstall tx-core-cli; mv $LOCAL_BIN/tx-old $LOCAL_BIN/tx${X};
+  ${D}cargo uninstall tx-core; mv $LOCAL_BIN/tx-old $LOCAL_BIN/tx${X};
   remove the @tx-ide-bin line from $OLD_TMUX_CONF;
   restore $CLAUDE_DIR/settings.json and $CODEX_DIR/hooks.json from their .bak.<stamp> copies.
 EOF

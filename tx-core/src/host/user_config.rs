@@ -156,6 +156,18 @@ mod tests {
     use super::*;
     use crate::EngineKind;
 
+    /// The repository's file spells out exactly the built-in defaults of `agent` and `worktree`,
+    /// as a missing file has them. It lists no plugin: `tx setup` adds the selected ones when it
+    /// seeds the file.
+    #[test]
+    fn the_installed_file_is_the_built_in_defaults() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/tx-ide/config.yaml");
+        let config = load(&path).unwrap();
+        assert_eq!(config.agent, AgentDefaults::default());
+        assert_eq!(config.worktree, WorktreeSettings::default());
+        assert!(config.plugins.is_empty(), "{:?}", config.plugins);
+    }
+
     fn parse_text(text: &str) -> Result<Config, UsageError> {
         parse(text, Path::new("/c/config.yaml"))
     }

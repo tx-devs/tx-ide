@@ -1,0 +1,53 @@
+//! `txi`: tx's internal entry point. Machines run it, people do not: nothing here is listed in
+//! `tx help`. The one verb today is `txi hook <Event>`, which the hooks an engine adapter wires
+//! into its CLI run. It opens the same core as `tx` (the `TX_*_DIR` and socket every session carries).
+//!
+//! A hook must never fail the agent: anything that is not ours (outside a session, a malformed
+//! id, an unknown record) exits 0, and the wired command caps every other failure at exit 1.
+
+use std::process::ExitCode;
+
+use crate::TxCore;
+use crate::host::args::Global;
+use crate::host::setup::{Failure, Installation};
+
+const USAGE: &str = "\
+usage: txi hook <Event>   (run by the hooks an engine wires) feed $TX_SESSION_ID's state; payload on stdin
+
+txi is tx's internal entry point; people use tx.
+";
+
+pub fn txi() -> ExitCode {
+    // First thing: `tx` is the binary installed next to this one.
+    if let Ok(exe) = std::env::current_exe() {
+        crate::sdk::set_tx_bin(exe.with_file_name(crate::host::setup::TX));
+    }
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {
+        // Extra arguments are ignored, not refused: a hook must never fail over its own
+        // command line. The engine of the session may be a plugin's program: it is started
+        // before the session lock is taken (`crate::host::engine_program::hook`).
+        Some("hook") => {
+            match crate::host::engine_program::hook(
+                args.get(1).cloned().unwrap_or_default(),
+                || open(&Global::default()),
+            ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("txi: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
+        _ => {
+            eprint!("{USAGE}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// The core of this installation: every active plugin is behind a proxy that starts its
+/// program.
+fn open(global: &Global) -> Result<TxCore, Failure> {
+    Installation::read(global)?.open_hosted(global, Vec::new())
+}

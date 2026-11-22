@@ -5,6 +5,9 @@
 //! [`sdk::main`] the whole `main` of the plugin's program; [`testing`] keeps its bundle honest.
 
 pub mod agent;
+/// The `tx` and `txi` binaries; internal.
+#[doc(hidden)]
+pub mod cli;
 pub mod config;
 pub mod core;
 pub mod effort;
