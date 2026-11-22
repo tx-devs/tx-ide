@@ -21,9 +21,9 @@
 //! ```
 //!
 //! A start names its chat after the tx session id (`--new-session-id`, hidden but honoured), so
-//! the plan carries the conversation up front: a resume fires no `sessionStart`, and the
-//! transcript path hooks report stays `null` until the first tool. A `/new` inside the TUI is
-//! picked up from the next hook's `conversation_id`.
+//! the plan carries the conversation up front: a resume fires no `sessionStart` (only
+//! `workspaceOpen`, which names none), and the transcript path hooks report stays `null` until
+//! the first tool. A `/new` inside the TUI is picked up from the next hook's `conversation_id`.
 //!
 //! `model`, `effort`, `command` and `args` are launch options. Cursor has no effort flag: the
 //! effort is a parameter of the model id (`gpt-5.3-codex[effort=high]`), so an effort needs a
@@ -78,7 +78,8 @@ pub const PLUGIN_NAME: &str = "tx";
 pub const SKILLS_DIR: &str = ".cursor/skills";
 
 /// The hooks wired per launch, each running `<hook_command> <event>`. Only names Cursor knows.
-pub const HOOK_EVENTS: [&str; 5] = [
+pub const HOOK_EVENTS: [&str; 6] = [
+    "workspaceOpen",
     "sessionStart",
     "beforeSubmitPrompt",
     "preToolUse",
@@ -406,11 +407,14 @@ impl LlmEngine for CursorAdapter {
     }
 
     /// `stop` ends every turn (completed, aborted, and the error that follows an abort);
-    /// `sessionStart` fires once at launch. With every tool allowed nothing stops on an
-    /// approval, and the AskQuestion dialog fires no hook, so nothing here says `Waiting`.
+    /// `workspaceOpen` fires once the TUI is up, on a resume too, which fires no
+    /// `sessionStart`; its payload names no conversation. With every tool allowed nothing stops
+    /// on an approval, and the AskQuestion dialog fires no hook, so nothing says `Waiting`.
     fn on_hook(&self, session: &Agent, hook: &LlmEngineHook) -> LlmEngineChange {
         let change = match hook.name.as_str() {
-            "sessionStart" | "stop" => LlmEngineChange::idle(IdleReason::Finished),
+            "workspaceOpen" | "sessionStart" | "stop" => {
+                LlmEngineChange::idle(IdleReason::Finished)
+            }
             "beforeSubmitPrompt" | "preToolUse" | "postToolUse" => {
                 LlmEngineChange::to(LlmEngineState::Working)
             }

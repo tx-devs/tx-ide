@@ -468,7 +468,7 @@ fn without_codex_no_engine_lists_mcp_tools_and_codex_cannot_be_checked() {
         (
             1,
             String::new(),
-            "tx: engine codex is not enabled (enabled: claude)\n".to_owned()
+            "tx: engine codex is not enabled (enabled: claude, cursor)\n".to_owned()
         )
     );
 }
