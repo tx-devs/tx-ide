@@ -1,0 +1,20 @@
+api: 1
+id: attention
+description: The agents that need the operator, on the status line, notified, and one key away (prefix+Space).
+tier: ide
+requires: [ide]
+settings: { finished: own, message: true, desktop: waiting, sound: false, command: null }
+
+verbs:
+  - name: attention
+    usage: "attention [ls [--json] | next <client> | clear]   the agents that need the operator; next shows the first (prefix+Space)"
+    bin: tx-attention
+    args: [attention]
+
+on-event:
+  events: [state-changed]
+  bin: tx-attention
+  args: [--tx-event]
+
+resources:
+  - keys/attention.tmux

@@ -1,0 +1,20 @@
+[package]
+name = "tx-attention"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "tx-core plugin: the agents that need the operator, marked on the status line, notified, and one key away (prefix+Space)."
+
+# The plugin as its own program: what `plugin.yaml` names for its verb and its event sink.
+[[bin]]
+name = "tx-attention"
+path = "src/main.rs"
+
+[dependencies]
+tx-core.workspace = true
+tx-client.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

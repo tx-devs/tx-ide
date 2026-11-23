@@ -18,6 +18,7 @@ tier `ide`, and `full`, the default, adds tier `extra`.
 | `labels` | core | `tx-labels` |
 | `setup` | core | `tx-setup` |
 | `assistant` | ide | `tx-assistant` |
+| `attention` | ide | `tx-attention` |
 | `board` | ide | `tx-board` |
 | `switch` | ide | `tx-switch` |
 | `edit` | ide | `tx-edit` |
@@ -128,7 +129,8 @@ which from `tx-ide` runs the program `tx-home`.
 
 **`labels`**: `whoami` prints the session the terminal runs in. prefix+s refreshes labels and opens
 tmux's session tree. Its fragment draws the pane-border label: the nested session's name and tags,
-with a green bar while the agent works and the age since its last activity while idle.
+with a green bar while the agent works and the age since its last activity while idle, behind a
+`▲` when it is idle on you (an approval, a question, a plan to accept).
 Tier `core`; its program is `tx-labels` (`plugins/labels/plugin.yaml`). The
 fragment asks `_label-program` once, when the server's configuration loads, and has tmux run that
 program for the border label directly, not through `tx`.
@@ -218,6 +220,28 @@ it, and `r` retries. Its verbs run as the program `tx-board`
 file's comments and layout, then runs `tx update`, which publishes or retires the plugin.
 `switch` alone lists the plugins: space flips one, Enter applies, q cancels. prefix+P opens it
 in a popup. Tier `ide` (it requires `ide`); its program is `tx-switch`.
+
+**`attention`**: the agents that need you. An agent is marked when it stops on you (an approval,
+a question, a plan to accept), and when it finishes a turn it worked on and you started it: it has
+no parent, or its parent is the assistant. A worker another agent started is marked only when it
+waits. An agent you are looking at (the session your terminal is on, and from there the session
+nested in each active pane) is not announced, and its finished turn is not marked; its question
+is, until it is answered. The mark is the option `@tx-attention` on the
+agent's own tmux session, set by the plugin's event sink on `state-changed` and gone when the
+agent works again; a finished one also goes when its pane takes the focus. In every view the
+marked agents stand at the left of the status line, `▲` for waiting and `○` for finished, and a
+new mark shows `<name> needs you` or `<name> finished` on the status line for a few seconds.
+prefix+Space (`attention next <client>`) goes to the first marked agent, waiting ones first, then
+the oldest: the pane that shows it, else a popup. `attention` (or `attention ls`, `--json` for a
+program) lists the marks, dropping one whose agent no longer needs you; `attention clear` takes
+them all back. Settings: `finished` (`own`, the default; `all`; `none`), `message` (the
+status-line message, default on), `desktop` (`waiting`, the default: a desktop notification for
+a waiting agent; `all`; `none`), `sound` (the terminal bell, default off) and `command`. The
+desktop notification is the terminal's own, the escape sequence OSC 9 written to the terminal
+client, so it needs no helper and works over ssh; it is sent to iTerm2, Ghostty and WezTerm.
+For any other terminal, or a phone, set `command`: it is run by `sh` instead, with one JSON line
+on standard input, `{"id":…,"name":…,"need":"waiting"|"finished","text":…}`. Tier `ide` (it
+requires `ide`); its program is `tx-attention`.
 
 **`graph`**: `graph` draws the agents as a graph: columns by lineage depth, dashed edges for
 lineage, and solid edges for the messages agents (and you, the node "you") sent each other in the
