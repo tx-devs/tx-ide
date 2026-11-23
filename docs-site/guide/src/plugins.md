@@ -180,9 +180,9 @@ gone). Any other kind is opened by the plugin whose verb is named after it, as `
 a `tour` by `tour`, run as that plugin's program where it is a bundle. `group` reads or sets a
 session's effort group. prefix+a lists the artifacts an agent touched, plus its parent and
 children, in a popup that fits the pane it was pressed in (a pane too small for it gets the popup
-over the terminal). On a row, through tx-client's `show`: Enter or the row's key picks a pane to
-attach its view into (attach-to, starting on that pane), p opens it in a popup titled with its
-tags and owner. Tier `core`. Its verbs run as the program `tx-artifacts` (`plugins/artifacts/plugin.yaml`).
+over the terminal). A row's key (`1`…`9`, `M-a`…) moves the cursor to it; then, as on a timeline
+lane, a (or Enter) picks a pane to attach its view into (attach-to, starting on that pane) and p
+opens it in a popup titled with its tags and owner. Tier `core`. Its verbs run as the program `tx-artifacts` (`plugins/artifacts/plugin.yaml`).
 
 **`tour`**: `tour create <stops.lua> --title T` registers a code tour as an artifact of kind
 `tour`; `tour open <id>` starts a `tour` view, nvim in the worktree walking the stops as

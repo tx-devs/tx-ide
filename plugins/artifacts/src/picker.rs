@@ -2,10 +2,11 @@
 //! drawn like the session picker's rows.
 //!
 //! Pure list logic ([`Picker`]), keys in and the chosen action out, around tx-client's editor
-//! terminal layer. As on a timeline lane, the picks are tx-client's ways of showing a session
-//! ([`Show`]): Enter or a row's key (`1`…`9`, then choose-tree's `M-a`…`M-z`, `M-A`…`M-Z`)
-//! attaches the row into a pane the operator picks next (attach-to), p opens the cursor's row in
-//! a popup. Esc, q or Ctrl-C close. A list taller than the popup scrolls with the cursor.
+//! terminal layer. A row's key (`1`…`9`, then choose-tree's `M-a`…`M-z`, `M-A`…`M-Z`) moves the
+//! cursor to that row, as j/k and the arrows move it by one. Then, as on a timeline lane, the
+//! picks are tx-client's ways of showing a session ([`Show`]): a (or Enter) attaches the cursor's
+//! row into a pane the operator picks next (attach-to), p opens it in a popup. Esc, q or Ctrl-C
+//! close. A list taller than the popup scrolls with the cursor.
 
 use std::io;
 
@@ -13,7 +14,7 @@ use tx_client::editor::{Decoder, Key, Terminal, read_key, write_all};
 use tx_client::render::{ACCENT_ANSI, BOLD, DIM_FG_ANSI, RESET, SELECTION_BG};
 use tx_client::show::Show;
 
-pub const HINT: &str = "Enter/key attach to a pane   p popup   Esc close";
+pub const HINT: &str = "key go to row   a attach to a pane   p popup   Esc close";
 /// Screen lines that are not list: the header, a blank line and the hint.
 pub const CHROME_ROWS: usize = 3;
 
@@ -95,13 +96,13 @@ impl<'a> Picker<'a> {
             Key::Down | Key::Char('j') => {
                 self.cursor = (self.cursor + 1).min(self.rows.saturating_sub(1));
             }
-            Key::Enter | Key::Char('\r') | Key::Char('\n') => {
+            Key::Char('a') | Key::Enter | Key::Char('\r') | Key::Char('\n') => {
                 return Some(self.row().map(|index| (Show::AttachTo, index)));
             }
             Key::Char('p') => return Some(self.row().map(|index| (Show::Popup, index))),
             Key::Char('1'..='9') | Key::Alt(_) => {
                 if let Some(index) = row_index(key).filter(|index| *index < self.rows) {
-                    return Some(Some((Show::AttachTo, index)));
+                    self.cursor = index;
                 }
             }
             Key::Char('\x1b' | 'q' | '\x03') => return Some(None),
@@ -199,7 +200,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn enter_and_keys_attach_to_p_pops_up() {
+    fn keys_go_to_a_row_a_attaches_to_p_pops_up() {
         let items = vec![
             Item::Section("X".to_owned()),
             Item::Row("a".to_owned()),
@@ -210,11 +211,13 @@ mod tests {
         let mut picker = Picker::new("H", &items);
         assert_eq!(picker.handle(Key::Down), None);
         assert_eq!(picker.handle(Key::Enter), Some(Some((Show::AttachTo, 1))));
+        assert_eq!(picker.handle(Key::Char('3')), None);
         assert_eq!(
-            picker.handle(Key::Char('3')),
+            picker.handle(Key::Char('a')),
             Some(Some((Show::AttachTo, 2)))
         );
-        assert_eq!(picker.handle(Key::Char('p')), Some(Some((Show::Popup, 1))));
+        assert_eq!(picker.handle(Key::Char('1')), None);
+        assert_eq!(picker.handle(Key::Char('p')), Some(Some((Show::Popup, 0))));
         assert_eq!(picker.handle(Key::Char('0')), None);
         assert_eq!(picker.handle(Key::Char('7')), None);
         assert_eq!(picker.handle(Key::Char('f')), None);
@@ -237,11 +240,9 @@ mod tests {
         assert_eq!(row_label(9), "(M-a)");
         let items: Vec<Item> = (0..12).map(|i| Item::Row(i.to_string())).collect();
         let mut picker = Picker::new("H", &items);
-        assert_eq!(
-            picker.handle(Key::Alt('c')),
-            Some(Some((Show::AttachTo, 11)))
-        );
+        assert_eq!(picker.handle(Key::Alt('c')), None);
         assert_eq!(picker.handle(Key::Alt('d')), None);
+        assert_eq!(picker.handle(Key::Char('p')), Some(Some((Show::Popup, 11))));
     }
 
     #[test]

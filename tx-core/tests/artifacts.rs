@@ -724,9 +724,9 @@ fn terminal_table(cli: &Cli) -> String {
     cli.tmux_out(&["list-clients", "-t", "=home", "-F", "#{client_key_table}"])
 }
 
-/// A pick's Enter starts attach-to on the pane prefix+a fired in; Enter there attaches.
+/// The picker's a starts attach-to on the pane prefix+a fired in; Enter there attaches.
 fn attach_here(cli: &Cli) {
-    outer_keys(cli, &["Enter"]);
+    outer_keys(cli, &["a"]);
     assert!(
         cli.wait_for(10, || terminal_table(cli) == "tx-attach-to"),
         "attach-to never started"
@@ -744,7 +744,7 @@ fn running_pick(cli: &Cli) -> bool {
         .any(|line| line.contains("_artifact-pick") && line.contains(cli.state().to_str().unwrap()))
 }
 
-/// Gate: prefix+a in an agent pane lists what it touched; Enter starts attach-to on that pane,
+/// Gate: prefix+a in an agent pane lists what it touched; a starts attach-to on that pane,
 /// whose Enter attaches the chosen artifact's view there.
 #[test]
 fn prefix_a_in_an_agent_pane_attaches_the_chosen_artifact() {
