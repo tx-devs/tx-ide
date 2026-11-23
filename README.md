@@ -22,6 +22,8 @@ Everything around the agents is a plugin:
 - **Artifacts** (prefix+a): durable, versioned deliverables: documents, diffs opened in diffview,
   code tours walked in nvim.
 - **Layouts**: a window of agents, commands and shells, saved as YAML and opened in any project.
+- **Attention** (prefix+Space): the agents that stopped on you, or finished a turn you are owed,
+  on the status line and in a notification; one key goes to the next one.
 - **The assistant** (prefix+/): a resident agent that knows tx, asked one line from any pane and
   told which pane.
 - **Views**: nvim, shells and diffviews beside the agents, on the same server.
@@ -137,6 +139,7 @@ attach also starts the assistant in the background.
 | prefix+T | the timeline |
 | prefix+b | the GitHub issue board of the pane's checkout |
 | prefix+P | switch plugins on and off |
+| prefix+Space | go to the next agent that needs you |
 | prefix+a | in an agent: the artifacts it touched, its parent and children; in a view: back to its agent |
 | prefix+s | refresh the labels, then `choose-tree` |
 | prefix+\| / prefix+- | split right / below |
@@ -168,7 +171,7 @@ the popup. The graph lists its keys on `?`.
 | `tx engines`, `tx plugins` | the enabled engines; every plugin and whether it is on |
 
 Plugins add `ui`, `home`, `pick`, `kill`, `whoami`, `chat`, `doctor`, `assistant`, `artifact`,
-`group`, `tour`, `timeline`, `board`, `switch`, `graph`, `layout`, `mockup` and `tutor`. `tx help` prints every verb
+`group`, `tour`, `timeline`, `board`, `switch`, `attention`, `graph`, `layout`, `mockup` and `tutor`. `tx help` prints every verb
 with its flags; verbs starting with `_` are internal, run by key bindings and hooks.
 
 ## Agent definitions

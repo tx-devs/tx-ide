@@ -528,11 +528,15 @@ fn the_engines_program_is_running_before_the_session_lock_is_taken() {
     );
     let pid = std::fs::read_to_string(cli.fake_data("pid")).unwrap();
     assert!(alive(pid.trim()), "and it is running");
-    assert_eq!(
-        std::fs::read_to_string(&trace).unwrap().lines().count(),
-        1,
-        "started once"
-    );
+    // Engine programs only: the state change that follows also starts the event sinks.
+    let engines_started = || {
+        std::fs::read_to_string(&trace)
+            .unwrap()
+            .lines()
+            .filter(|line| line.starts_with("engine\t"))
+            .count()
+    };
+    assert_eq!(engines_started(), 1, "started once");
     // The hook itself waits for the lock: nothing was asked, nothing moved.
     std::thread::sleep(std::time::Duration::from_millis(300));
     assert!(hook.try_wait().unwrap().is_none(), "txi is waiting");
@@ -544,7 +548,7 @@ fn the_engines_program_is_running_before_the_session_lock_is_taken() {
     assert_eq!(cli.state_of("a"), "idle");
     assert_eq!(cli.methods()[calls..], ["on_hook", "archive"]);
     assert_eq!(
-        std::fs::read_to_string(&trace).unwrap().lines().count(),
+        engines_started(),
         1,
         "the program started before the lock answered both calls"
     );

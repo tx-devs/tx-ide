@@ -1775,6 +1775,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tx-attention"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tx-client",
+ "tx-core",
+]
+
+[[package]]
 name = "tx-board"
 version = "0.1.0"
 dependencies = [
