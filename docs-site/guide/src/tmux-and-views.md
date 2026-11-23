@@ -111,7 +111,8 @@ switches the current client to `home` instead.
 
 A plugin that lets the operator pick a session shows it through tx-client, either with
 `Ui::show_session(client, show, session, pane)` in-process or with
-`tx _show <client> focus|attach-to|popup <session> [<pane>]`:
+`tx _show <client> focus|attach-to|popup <session> [<pane>]`. The timeline and prefix+a do;
+prefix+a titles its popup with `Ui::show_popup`.
 
 - **focus** moves the terminal to the pane already showing the session.
 - **attach-to** lets the operator pick the pane. The `tx-attach-to` key table (in `keys/ide.tmux`)
