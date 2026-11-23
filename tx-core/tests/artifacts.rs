@@ -796,6 +796,58 @@ fn prefix_a_in_an_agent_pane_attaches_the_chosen_artifact() {
     assert_eq!(views.matches("plan-md").count(), 1, "{views}");
 }
 
+fn outer_screen(cli: &Cli) -> String {
+    let output = Command::new("tmux")
+        .arg("-S")
+        .arg(cli.outer_sock())
+        .args(["-f", "/dev/null", "capture-pane", "-p", "-t", "=outer:"])
+        .env_remove("TMUX")
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+/// Gate: prefix+a in a pane shorter than the list still opens the picker: the popup is clamped
+/// to the pane (tmux refuses a taller one) and the list scrolls under the hint.
+#[test]
+fn prefix_a_in_a_short_pane_opens_a_clamped_scrolling_picker() {
+    require_tmux!();
+    let cli = Cli::new();
+    let (a, _) = operator(&cli);
+    for index in 0..12 {
+        create(&cli, &a, &format!("note{index:02}.md"), "x\n");
+    }
+    // a's pane keeps 9 of home's 40 rows; the list needs 13 lines plus the popup's 6.
+    cli.tmux(&["split-window", "-d", "-v", "-l", "30", "-t", "=home:", "sh"]);
+    outer_keys(&cli, &["C-a", "a"]);
+    assert!(
+        cli.wait_for(10, || running_pick(&cli)),
+        "the picker never opened"
+    );
+    assert!(
+        cli.wait_for(5, || outer_screen(&cli).contains("note11.md")),
+        "{}",
+        outer_screen(&cli)
+    );
+    let screen = outer_screen(&cli);
+    assert!(screen.contains("Esc close"), "{screen}");
+    assert!(!screen.contains("note00.md"), "{screen}");
+    for _ in 0..12 {
+        outer_keys(&cli, &["Down"]);
+    }
+    assert!(
+        cli.wait_for(5, || outer_screen(&cli).contains("note00.md")),
+        "the list never scrolled: {}",
+        outer_screen(&cli)
+    );
+    assert!(!outer_screen(&cli).contains("note11.md"));
+    outer_keys(&cli, &["Escape"]);
+    assert!(
+        cli.wait_for(5, || !running_pick(&cli)),
+        "the picker never closed"
+    );
+}
+
 /// Gate: a pick in focus mode moves the terminal to the pane already showing the view.
 #[test]
 fn artifact_go_focus_moves_to_the_pane_showing_the_view() {

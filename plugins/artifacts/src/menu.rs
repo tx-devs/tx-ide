@@ -20,7 +20,7 @@ use tx_client::views::View;
 use tx_core::{Agent, AgentId, ListFilter, LlmEngineState, TxCore, VerbError, VerbIo};
 
 use crate::artifact::{Artifact, Kind, USER_ACTOR};
-use crate::picker::{self, HINT, Item, Pick, row_label, visible_width};
+use crate::picker::{self, CHROME_ROWS, HINT, Item, Pick, row_label, visible_width};
 use crate::render::{actor_label, updated_at};
 use crate::service::ArtifactService;
 use crate::tmux::{self as tm, DIM_FG_HEX, FG_HEX};
@@ -33,10 +33,10 @@ const DIGIT_LABEL_WIDTH: usize = 4;
 const META_LABEL_WIDTH: usize = 6;
 /// Popup border plus one column of padding each side.
 const POPUP_FRAME: usize = 4;
-/// Header, rows, a blank line, the notice line, the hint, and the border rows.
-const POPUP_ROWS_OVERHEAD: usize = 6;
-/// Assumed client width when tmux cannot report one.
-const DEFAULT_WIDTH: usize = 120;
+/// The popup's top and bottom border.
+const POPUP_BORDER_ROWS: usize = 2;
+/// Assumed client size when tmux cannot report one.
+const DEFAULT_SIZE: (usize, usize) = (120, 40);
 const NAME_GAP: usize = 3;
 
 pub const MENU_VERB: &str = "_artifact-menu";
@@ -273,17 +273,22 @@ impl Nav<'_> {
             .chain([visible_width(&listing.header), HINT.chars().count()])
             .max()
             .unwrap_or(0);
-        let width = (content + POPUP_FRAME).min(self.client_width(client));
-        let height = listing.items.len().max(1) + POPUP_ROWS_OVERHEAD;
-        self.ui
-            .display_popup(
-                client,
-                &width.to_string(),
-                &height.to_string(),
-                &listing.title,
-                &self.tx_command(&[PICK_VERB, session, client]),
-            )
-            .map_err(failed)?;
+        let (columns, rows) = self.client_size(client);
+        // tmux refuses a popup larger than its client; a list taller than that scrolls.
+        let width = (content + POPUP_FRAME).min(columns);
+        let height = (listing.items.len().max(1) + CHROME_ROWS + POPUP_BORDER_ROWS).min(rows);
+        let shown = self.ui.display_popup(
+            client,
+            &width.to_string(),
+            &height.to_string(),
+            &listing.title,
+            &self.tx_command(&[PICK_VERB, session, client]),
+        );
+        if let Err(error) = shown {
+            self.ui
+                .display_status(client, &format!("prefix+a: {error}"));
+            return Ok(1);
+        }
         Ok(0)
     }
 
@@ -348,8 +353,9 @@ impl Nav<'_> {
         Ok(0)
     }
 
-    fn client_width(&self, client: &str) -> usize {
-        tm::client_width(&self.ui, client).unwrap_or(DEFAULT_WIDTH)
+    /// `client`'s `(columns, rows)`: the pane prefix+a fired in, for a nested client.
+    fn client_size(&self, client: &str) -> (usize, usize) {
+        tm::client_size(&self.ui, client).unwrap_or(DEFAULT_SIZE)
     }
 
     fn listing(&self, record: &Agent, client: &str) -> Result<Listing, VerbError> {
@@ -367,7 +373,7 @@ impl Nav<'_> {
         let all_rows: Vec<&Row> = sections.iter().flat_map(|(_, rows)| rows).collect();
         let layout = Layout::fit(
             &all_rows,
-            self.client_width(client).saturating_sub(POPUP_FRAME),
+            self.client_size(client).0.saturating_sub(POPUP_FRAME),
         );
         let names = all_rows.iter().map(|row| row.name.clone()).collect();
         let mut items = Vec::new();
