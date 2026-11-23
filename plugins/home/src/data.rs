@@ -11,7 +11,9 @@ use std::time::SystemTime;
 
 use tx_client::tmux::Ui;
 use tx_client::views::ViewKind;
-use tx_core::{Agent, CoreError, ListFilter, LlmEngineState, PluginStatus, TxCore, Verb, VerbIo};
+use tx_core::{
+    Agent, CoreError, IdleReason, ListFilter, LlmEngineState, PluginStatus, TxCore, Verb, VerbIo,
+};
 
 use crate::model::{AgentRow, AssistantState, Context, KeyHint, Project, ViewRow};
 use crate::project::ProjectCache;
@@ -101,6 +103,7 @@ pub fn context(
             name: agent.name.clone(),
             tag: agent.tags.first().cloned().unwrap_or_default(),
             state: agent.state,
+            waiting: agent.idle_reason == Some(IdleReason::Waiting),
             age_at: agent.last_activity_at.unwrap_or(agent.created_at),
             branch: cache.branch(&agent.working_directory),
             chats: cache.chats(agent.id.as_str()),

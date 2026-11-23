@@ -415,6 +415,7 @@ mod tests {
             name: "a".into(),
             tag: String::new(),
             state,
+            waiting: false,
             age_at: 0.0,
             branch: None,
             chats: 0,

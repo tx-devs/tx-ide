@@ -76,7 +76,7 @@ fn pane_label_dash_when_nothing_nested() {
 fn pane_label_shows_nested_session() {
     require_tmux!();
     let cli = Cli::new();
-    cli.create("inner");
+    let inner = cli.create("inner");
     cli.ok(&["tag", "inner", "t1"]);
     // An interactive shell that reads none of the operator's rc files.
     let shell = if Command::new("zsh").arg("-c").arg(":").output().is_ok() {
@@ -125,6 +125,19 @@ fn pane_label_shows_nested_session() {
     assert!(label.contains("#[bold]inner#[default]"), "{label:?}");
     assert!(label.contains("[t1]"), "{label:?}");
     assert!(!label.ends_with('\n'), "{label:?}");
+    // Stopped on the operator: the resting age stands behind a mark.
+    for (event, payload) in [
+        ("UserPromptSubmit", "{}"),
+        (
+            "PermissionRequest",
+            r#"{"tool_name":"AskUserQuestion","tool_input":{"questions":[]}}"#,
+        ),
+    ] {
+        let output = cli.txi(&["hook", event], &[("TX_SESSION_ID", &inner)], payload);
+        assert!(output.status.success(), "{event}: {output:?}");
+    }
+    let label = cli.ok(&["_pane-label", &pane]);
+    assert!(label.contains("#[fg=#e0af68]▲ 0m#[default]"), "{label:?}");
     cli.ok(&["stop", "outer"]);
 }
 

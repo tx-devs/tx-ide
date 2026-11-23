@@ -24,6 +24,8 @@ pub struct AgentRow {
     /// The first tag, or empty.
     pub tag: String,
     pub state: LlmEngineState,
+    /// Idle on the operator: an approval, a question, a plan to accept.
+    pub waiting: bool,
     /// Last activity, else creation, epoch seconds.
     pub age_at: f64,
     pub branch: Option<String>,
@@ -1008,6 +1010,7 @@ pub(crate) mod tests {
             name: name.into(),
             tag: "agent".into(),
             state,
+            waiting: false,
             age_at,
             branch: None,
             chats: 1,

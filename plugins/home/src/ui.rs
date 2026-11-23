@@ -208,6 +208,7 @@ fn agent_line(agent: &AgentRow, now: f64, frame: usize) -> Line<'static> {
     let (glyph, word, glyph_style) = match agent.state {
         LlmEngineState::Working => ('●', "working", fg(GREEN)),
         LlmEngineState::Starting => (SPINNER[frame % SPINNER.len()], "starting", fg(WARN)),
+        LlmEngineState::Idle if agent.waiting => ('▲', "needs you", fg(WARN)),
         LlmEngineState::Idle => ('○', "idle", dim()),
         LlmEngineState::Ended => ('○', "ended", dim()),
     };
@@ -221,7 +222,7 @@ fn agent_line(agent: &AgentRow, now: f64, frame: usize) -> Line<'static> {
     let mut spans = vec![
         Span::styled("  ", body),
         Span::styled(glyph.to_string(), glyph_style),
-        Span::styled(format!(" {name:<NAME_W$} {word:<8}{age:>6}"), body),
+        Span::styled(format!(" {name:<NAME_W$} {word:<9}{age:>5}"), body),
     ];
     if let Some(branch) = &agent.branch {
         spans.push(Span::styled(format!("  {branch}"), dim()));
@@ -638,6 +639,24 @@ mod tests {
         assert!(buf[(0, y)].modifier.contains(Modifier::BOLD));
         assert!(!buf[(12, y)].modifier.contains(Modifier::BOLD));
         assert!(buf[(12, y)].modifier.contains(Modifier::DIM));
+    }
+
+    #[test]
+    fn an_agent_idle_on_the_operator_reads_needs_you() {
+        let mut home = Home::new(context());
+        home.context.agents.push(AgentRow {
+            waiting: true,
+            ..agent("a3", "asks", LlmEngineState::Idle, 940.0, 0)
+        });
+        let buf = render(&home);
+        let lines = text(&buf);
+        let row = row_of(&lines, "asks");
+        assert!(
+            lines[row].starts_with("  ▲ asks                     needs you   1m"),
+            "{}",
+            lines[row]
+        );
+        assert_eq!(buf[(2, u16::try_from(row).unwrap())].fg, WARN);
     }
 
     #[test]

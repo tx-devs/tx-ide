@@ -6,10 +6,11 @@
 use std::sync::Arc;
 
 use tx_core::{
-    Agent, AgentId, CoreError, ListFilter, LlmEngineState, Plugin, PluginError, Registry, TxCore,
-    Verb, VerbError, VerbIo, events,
+    Agent, AgentId, CoreError, IdleReason, ListFilter, LlmEngineState, Plugin, PluginError,
+    Registry, TxCore, Verb, VerbError, VerbIo, events,
 };
 
+use tx_client::palette::WARN_HEX;
 use tx_client::render::{PickerEntry, activity_at, reltime, tag_hex};
 use tx_client::tmux::{DIM_FG_HEX, Ui, WORKING_HEX};
 
@@ -235,7 +236,8 @@ fn nested_label(core: &TxCore, inner: &str) -> String {
 }
 
 /// The border's right end: a green bar while the agent works, the age since its last activity
-/// while it rests (`0m` for the first minute), nothing while it starts or after it ended.
+/// while it rests (`0m` for the first minute), behind a `▲` when it rests on the operator (an
+/// approval, a question, a plan), nothing while it starts or after it ended.
 fn state_mark(session: &Agent, now: f64) -> String {
     match session.state {
         LlmEngineState::Working => {
@@ -248,7 +250,11 @@ fn state_mark(session: &Agent, now: f64) -> String {
             } else {
                 reltime(Some(since), now)
             };
-            format!("#[align=right] #[fg={DIM_FG_HEX}]{age}#[default] ")
+            if session.idle_reason == Some(IdleReason::Waiting) {
+                format!("#[align=right] #[fg={WARN_HEX}]▲ {age}#[default] ")
+            } else {
+                format!("#[align=right] #[fg={DIM_FG_HEX}]{age}#[default] ")
+            }
         }
         LlmEngineState::Starting | LlmEngineState::Ended => String::new(),
     }
