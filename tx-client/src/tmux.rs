@@ -342,10 +342,11 @@ impl Ui {
     }
 
     /// `run-shell -b`, with `#` doubled so tmux runs `command` verbatim rather than
-    /// expanding it as a format.
+    /// expanding it as a format. Not before `[`: the expansion keeps `#[` (a style, as in a
+    /// popup title) as it is, but would keep a doubled `##[` doubled.
     pub fn run_shell_background(&self, command: &str) -> Result<(), UiError> {
-        self.run(&["run-shell", "-b", &command.replace('#', "##")])
-            .map(drop)
+        let escaped = command.replace('#', "##").replace("##[", "#[");
+        self.run(&["run-shell", "-b", &escaped]).map(drop)
     }
 
     /// Echo `msg` to stderr and show it on `client`'s status line (best effort).
@@ -852,7 +853,7 @@ mod tests {
         let out = dir.path().join("out");
         let command = format!(
             "printf %s {} > {}",
-            shell_quote("a#S#{pane_id}##b"),
+            shell_quote("a#S#{pane_id}##b#[fg=red]c"),
             out.display()
         );
         let result = ui.run_shell_background(&command);
@@ -866,7 +867,7 @@ mod tests {
         }
         ui.quiet(&["kill-server"]);
         result.unwrap();
-        assert_eq!(text, "a#S#{pane_id}##b");
+        assert_eq!(text, "a#S#{pane_id}##b#[fg=red]c");
     }
 
     #[test]
