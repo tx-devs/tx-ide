@@ -7,12 +7,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
+use tx_client::show::Show;
 use tx_client::tmux::Ui;
 use tx_core::{Agent, AgentId, CoreError, ListFilter, TxCore, Verb, VerbError, VerbIo};
 
 use crate::artifact::{Artifact, Kind, USER_ACTOR};
 use crate::grouping::{GroupResolver, ext_of, own_group};
-use crate::menu::{GO_VERB, MENU_VERB, Mode, Nav, PICK_VERB};
+use crate::menu::{GO_VERB, MENU_VERB, Nav, PICK_VERB};
 use crate::render::{render_artifact_show, render_artifacts};
 use crate::service::{ArtifactError, ArtifactService};
 use crate::views::{self, Opener};
@@ -826,7 +827,7 @@ pub struct PickVerb {
     pub editor: Arc<str>,
 }
 
-/// `_artifact-go <session> <client> attach|focus|popup artifact|session|view <id>`.
+/// `_artifact-go <session> <client> attach-to|popup artifact|session|view <id>`.
 pub struct GoVerb {
     pub editor: Arc<str>,
 }
@@ -882,7 +883,7 @@ impl Verb for GoVerb {
     }
 
     fn usage(&self) -> &'static str {
-        "_artifact-go <session> <client> attach|focus|popup artifact|session|view <id>   show a view (internal)"
+        "_artifact-go <session> <client> attach-to|popup artifact|session|view <id>   show a view (internal)"
     }
 
     fn run(&self, core: &TxCore, io: &mut VerbIo<'_>, argv: &[String]) -> Result<i32, VerbError> {
@@ -890,21 +891,21 @@ impl Verb for GoVerb {
         let usage = |io: &mut VerbIo<'_>| {
             let _ = writeln!(
                 io.stderr,
-                "usage: tx {GO_VERB} <session> <client> attach|focus|popup artifact|session|view <id>"
+                "usage: tx {GO_VERB} <session> <client> attach-to|popup artifact|session|view <id>"
             );
             Ok(2)
         };
-        let [session, client, mode, kind, id] = words[..] else {
+        let [session, client, show, kind, id] = words[..] else {
             return usage(io);
         };
-        let Some(mode) = Mode::parse(mode) else {
+        let Some(show) = Show::parse(show).filter(|show| *show != Show::Focus) else {
             return usage(io);
         };
         let nav = nav(core, &self.editor);
         match kind {
-            "artifact" => nav.go_artifact(session, client, mode, id),
-            "session" => nav.go_session(session, client, mode, id),
-            "view" => nav.go_view(session, client, mode, id),
+            "artifact" => nav.go_artifact(session, client, show, id),
+            "session" => nav.go_session(session, client, show, id),
+            "view" => nav.go_view(session, client, show, id),
             _ => usage(io),
         }
     }
