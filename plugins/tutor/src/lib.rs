@@ -39,7 +39,7 @@ const LESSON_LUA: &str = "lesson.lua";
 const KEYS_LINES: u16 = 15;
 /// Always needed besides the pack's own `requires`.
 const BASE_REQUIRES: [&str; 2] = ["git", "nvim"];
-const NVIM_COLORS: &str = "+set background=dark | colorscheme tokyonight-moon";
+const NVIM_COLORS: &str = "+set background=dark | colorscheme tokyonight-night";
 
 const USAGE: &str = "usage: tx tutor start [LANG] [--dir DIR] [--detach] | check | next | prev | goto N | status | hint | reset [--hard]   (all but start take --lang LANG)";
 
@@ -741,7 +741,7 @@ mod tests {
                 "nvim",
                 "--listen",
                 "/d/python.sock",
-                "+set background=dark | colorscheme tokyonight-moon",
+                "+set background=dark | colorscheme tokyonight-night",
                 "--cmd",
                 "lua vim.g.tx_tutor_lessons = [[/r/my pack/lessons/*]]; \
                  vim.g.tx_tutor_shell = [[=tutor-python:.{top-right}]]; \

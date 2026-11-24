@@ -4,7 +4,7 @@
 
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use tx_client::palette::{ACCENT, BORDER_DIM, DIM_FG, FG, GREEN, INFO, ON_ACCENT, RED, WARN};
+use tx_client::theme::{ColorDepth, Role, active};
 
 pub fn lines(text: &str) -> Vec<Line<'static>> {
     text.split('\n').map(line).collect()
@@ -81,31 +81,49 @@ fn parse_spec(spec: &str) -> Option<Style> {
             "italic" => style = style.add_modifier(Modifier::ITALIC),
             "reverse" => style = style.add_modifier(Modifier::REVERSED),
             "underline" => style = style.add_modifier(Modifier::UNDERLINED),
-            "on" => style = style.bg(colour(tokens.next()?)?),
-            _ => style = style.fg(colour(token)?),
+            "on" => {
+                if let Some(color) = colour(tokens.next()?)? {
+                    style = style.bg(color);
+                }
+            }
+            _ => {
+                if let Some(color) = colour(token)? {
+                    style = style.fg(color);
+                }
+            }
         }
     }
     Some(style)
 }
 
-fn colour(name: &str) -> Option<Color> {
+/// `Some(Some(color))` for a known colour name with a resolved colour, `Some(None)` when the
+/// name is known but `NO_COLOR` suppresses colour, `None` for an unknown tag.
+fn colour(name: &str) -> Option<Option<Color>> {
+    let theme = active();
+    let standard = |color: Color| {
+        if theme.depth == ColorDepth::None {
+            None
+        } else {
+            Some(color)
+        }
+    };
     Some(match name {
-        "black" => Color::Black,
-        "yellow" => Color::Yellow,
-        "blue" => Color::Blue,
-        "magenta" => Color::Magenta,
-        "cyan" => Color::Cyan,
-        "white" => Color::White,
-        "gray" => Color::Gray,
-        "accent" => ACCENT,
-        "warn" => WARN,
-        "fg" => FG,
-        "info" => INFO,
-        "green" => GREEN,
-        "red" => RED,
-        "dim-fg" => DIM_FG,
-        "border" => BORDER_DIM,
-        "on-accent" => ON_ACCENT,
+        "black" => standard(Color::Black),
+        "yellow" => standard(Color::Yellow),
+        "blue" => standard(Color::Blue),
+        "magenta" => standard(Color::Magenta),
+        "cyan" => standard(Color::Cyan),
+        "white" => standard(Color::White),
+        "gray" => standard(Color::Gray),
+        "accent" => theme.color(Role::Accent),
+        "warn" | "signal" => theme.color(Role::Signal),
+        "fg" => theme.color(Role::Text),
+        "info" => theme.color(Role::Info),
+        "green" => theme.color(Role::Working),
+        "red" => theme.color(Role::Failed),
+        "dim-fg" => theme.color(Role::Muted),
+        "border" => theme.color(Role::Rule),
+        "on-accent" => theme.color(Role::OnAccent),
         _ => return None,
     })
 }
@@ -114,7 +132,7 @@ fn colour(name: &str) -> Option<Color> {
 mod tests {
     use super::lines;
     use ratatui::style::{Color, Modifier};
-    use tx_client::palette::{BORDER_DIM, DIM_FG, GREEN, ON_ACCENT, RED};
+    use tx_client::theme::{ColorDepth, Role, active};
 
     #[test]
     fn plain_text_one_span() {
@@ -131,7 +149,7 @@ mod tests {
         assert_eq!(spans.len(), 3);
         assert_eq!(spans[0].content, "a");
         assert_eq!(spans[1].content, "b");
-        assert_eq!(spans[1].style.fg, Some(GREEN));
+        assert_eq!(spans[1].style.fg, active().color(Role::Working));
         assert_eq!(spans[2].content, "c");
         assert_eq!(spans[2].style.fg, None);
     }
@@ -141,7 +159,7 @@ mod tests {
         let lines = lines("[bold][red]x[/][/]");
         let span = &lines[0].spans[0];
         assert_eq!(span.content, "x");
-        assert_eq!(span.style.fg, Some(RED));
+        assert_eq!(span.style.fg, active().color(Role::Failed));
         assert!(span.style.add_modifier.contains(Modifier::BOLD));
     }
 
@@ -149,25 +167,28 @@ mod tests {
     fn on_background() {
         let lines = lines("[bold yellow on blue]x[/]");
         let span = &lines[0].spans[0];
-        assert_eq!(span.style.fg, Some(Color::Yellow));
-        assert_eq!(span.style.bg, Some(Color::Blue));
+        let expected_fg = (active().depth != ColorDepth::None).then_some(Color::Yellow);
+        let expected_bg = (active().depth != ColorDepth::None).then_some(Color::Blue);
+        assert_eq!(span.style.fg, expected_fg);
+        assert_eq!(span.style.bg, expected_bg);
         assert!(span.style.add_modifier.contains(Modifier::BOLD));
     }
 
     #[test]
     fn palette_accent() {
         let lines = lines("[accent]x[/]");
-        assert_eq!(lines[0].spans[0].style.fg, Some(Color::Rgb(122, 162, 247)));
+        assert_eq!(lines[0].spans[0].style.fg, active().color(Role::Accent));
     }
 
     #[test]
     fn palette_names_match_the_ui() {
+        let theme = active();
         let lines = lines("[dim-fg]a[/][border]b[/][on-accent on green]c[/]");
         let spans = &lines[0].spans;
-        assert_eq!(spans[0].style.fg, Some(DIM_FG));
-        assert_eq!(spans[1].style.fg, Some(BORDER_DIM));
-        assert_eq!(spans[2].style.fg, Some(ON_ACCENT));
-        assert_eq!(spans[2].style.bg, Some(GREEN));
+        assert_eq!(spans[0].style.fg, theme.color(Role::Muted));
+        assert_eq!(spans[1].style.fg, theme.color(Role::Rule));
+        assert_eq!(spans[2].style.fg, theme.color(Role::OnAccent));
+        assert_eq!(spans[2].style.bg, theme.color(Role::Working));
     }
 
     #[test]
@@ -189,7 +210,7 @@ mod tests {
         let lines = lines("[red]x");
         let span = &lines[0].spans[0];
         assert_eq!(span.content, "x");
-        assert_eq!(span.style.fg, Some(RED));
+        assert_eq!(span.style.fg, active().color(Role::Failed));
     }
 
     #[test]

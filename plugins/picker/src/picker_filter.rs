@@ -7,7 +7,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use tx_client::render::{BOLD, DIM_FG_ANSI, RESET, RESET_FG, tag_ansi};
+use tx_client::render::{BOLD, RESET, RESET_FG};
+use tx_client::theme::{Role, active};
 use tx_core::TxCore;
 
 /// The four roles `role_of` gives a row, in panel and chip order.
@@ -100,18 +101,21 @@ pub fn word_at(line: &str, column: usize) -> &str {
 }
 
 fn chip(role: &str, hidden: &[&str]) -> String {
+    let theme = active();
     if hidden.contains(&role) {
-        format!("{DIM_FG_ANSI}{OFF} {role}{RESET_FG}")
+        let muted = theme.ansi_fg(Role::Muted);
+        format!("{muted}{OFF} {role}{RESET_FG}")
     } else {
-        format!("{}{ON} {role}{RESET_FG}", tag_ansi(role))
+        format!("{}{ON} {role}{RESET_FG}", theme.tag_ansi(role))
     }
 }
 
 /// The picker's header line: one chip per role, then the key hint.
 pub fn chips_line(hidden: &[&str]) -> String {
+    let muted = active().ansi_fg(Role::Muted);
     let chips: Vec<String> = ROLES.iter().map(|role| chip(role, hidden)).collect();
     format!(
-        "{DIM_FG_ANSI}roles{RESET_FG}  {}   {DIM_FG_ANSI}TAB filter{RESET_FG}",
+        "{muted}roles{RESET_FG}  {}   {muted}TAB filter{RESET_FG}",
         chips.join("  ")
     )
 }
@@ -127,8 +131,9 @@ pub fn panel_rows(hidden: &[&str]) -> String {
 
 /// The TAB panel's header: a bold key legend.
 pub fn panel_legend() -> String {
+    let muted = active().ansi_fg(Role::Muted);
     format!(
-        "{DIM_FG_ANSI}{BOLD}space{RESET}{DIM_FG_ANSI} toggle · {BOLD}a{RESET}{DIM_FG_ANSI} toggle all · {BOLD}⏎{RESET}{DIM_FG_ANSI} close{RESET}"
+        "{muted}{BOLD}space{RESET}{muted} toggle · {BOLD}a{RESET}{muted} toggle all · {BOLD}⏎{RESET}{muted} close{RESET}"
     )
 }
 

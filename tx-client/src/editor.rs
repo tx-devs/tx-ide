@@ -19,9 +19,8 @@
 use std::io::{self, Write};
 use std::os::fd::RawFd;
 
-use crate::render::{
-    ACCENT_ANSI, BOLD, DIM_FG_ANSI, FG_ANSI, INFO_ANSI, ITALIC, SELECTION_BG, WARN_ANSI,
-};
+use crate::render::{BOLD, ITALIC};
+use crate::theme::{Role, active};
 
 const NORMAL_HINT: &str = "NORMAL  hjkl move   i a A type   Enter save   Esc cancel";
 const INSERT_HINT: &str = "INSERT  Esc normal   Enter save";
@@ -94,16 +93,23 @@ pub enum Style {
 
 impl Style {
     fn sgr(self) -> String {
+        let theme = active();
+        let selection_bg = theme.ansi_bg(Role::Selection);
+        let selected_marker = if selection_bg.is_empty() {
+            "\x1b[7m"
+        } else {
+            &selection_bg
+        };
         match self {
-            Style::Normal => FG_ANSI.into(),
-            Style::Accent => format!("{ACCENT_ANSI}{BOLD}"),
-            Style::Muted => DIM_FG_ANSI.into(),
-            Style::Selected => format!("{FG_ANSI}\x1b[48;5;{SELECTION_BG}m"),
-            Style::Automatic => format!("{INFO_ANSI}{ITALIC}"),
+            Style::Normal => theme.ansi_fg(Role::Text),
+            Style::Accent => format!("{}{BOLD}", theme.ansi_fg(Role::Accent)),
+            Style::Muted => theme.ansi_fg(Role::Muted),
+            Style::Selected => format!("{}{selected_marker}", theme.ansi_fg(Role::Text)),
+            Style::Automatic => format!("{}{ITALIC}", theme.ansi_fg(Role::Info)),
             Style::AutomaticSelected => {
-                format!("{INFO_ANSI}{ITALIC}\x1b[48;5;{SELECTION_BG}m")
+                format!("{}{ITALIC}{selected_marker}", theme.ansi_fg(Role::Info))
             }
-            Style::Warning => WARN_ANSI.into(),
+            Style::Warning => theme.ansi_fg(Role::Signal),
         }
     }
 }

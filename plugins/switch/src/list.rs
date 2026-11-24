@@ -21,8 +21,16 @@ pub fn run(plugins: &[(String, PluginStatus)]) -> io::Result<Vec<(String, bool)>
     let mut terminal = ratatui::try_init()?;
     let applied = loop {
         terminal.draw(|frame| {
-            let [list, hint] =
-                Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
+            let [header, list, hint] = Layout::vertical([
+                Constraint::Length(1),
+                Constraint::Fill(1),
+                Constraint::Length(1),
+            ])
+            .areas(frame.area());
+            frame.render_widget(
+                Line::styled("╋╳ plugins", Style::new().add_modifier(Modifier::BOLD)),
+                header,
+            );
             let rows = plugins.iter().enumerate().map(|(index, (id, status))| {
                 let changed = if wanted[index] == enabled[index] {
                     ' '
@@ -35,7 +43,13 @@ pub fn run(plugins: &[(String, PluginStatus)]) -> io::Result<Vec<(String, bool)>
             let rows =
                 List::new(rows).highlight_style(Style::new().add_modifier(Modifier::REVERSED));
             frame.render_stateful_widget(rows, list, &mut state);
-            frame.render_widget(Line::from("space switch · enter apply · q cancel"), hint);
+            frame.render_widget(
+                Line::styled(
+                    "space switch · enter apply · q cancel",
+                    Style::new().add_modifier(Modifier::DIM),
+                ),
+                hint,
+            );
         })?;
         let Event::Key(key) = event::read()? else {
             continue;
