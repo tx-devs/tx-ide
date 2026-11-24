@@ -35,7 +35,7 @@ tx-core            the library every plugin depends on, and the tx and txi binar
   thiserror, uuid, tempfile and shlex, and nothing in the workspace.
 - **`plugins/<id>`** are one package each (`tx-<id>`): the plugin's library, a three-line program
   that hosts it, its manifest and the files it publishes. The engine adapters (`engine-claude`,
-  `engine-codex`, `engine-cursor`) depend on `tx-core` alone. The IDE plugins also depend on
+  `engine-codex`, `engine-cursor`, `engine-antigravity`) depend on `tx-core` alone. The IDE plugins also depend on
   `tx-client`, and a few reuse a sibling's library code: `home` and `timeline` use `tx-chat`'s
   transcript readers, `tour` uses `tx-artifacts`' store. `home-themes` has no program of its own:
   `tx-home` hosts it. `setup` is not built on the SDK: it is the installer's wizard.
@@ -247,7 +247,7 @@ and never per refresh tick, since the program is kept:
 - on `tx interrupt` and `tx send`, for an engine whose manifest lists the `interrupt` or the
   `receive_message` method. No shipped engine does.
 
-The shipped engines, `claude`, `codex` and `cursor`, run this way, each with a hook entry of its own; so
+The shipped engines, `antigravity`, `claude`, `codex` and `cursor`, run this way, each with a hook entry of its own; so
 do an engine plugin of your own and the stand-in engine of the tests.
 
 ## Event sinks
