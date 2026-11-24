@@ -5,9 +5,12 @@
 //! hosts a `tmux` client), so `#{session_name}` is the session's name and `#{client_name}` the
 //! nested client whose screen is the hosting pane. In an agent session `_artifact-menu` opens a
 //! popup over the pane running `_artifact-pick`: the artifacts the session touched, its parent,
-//! its live children. Enter (or a digit) re-hosts the pane on the chosen view (the agent keeps
-//! running detached); f then a digit or Enter moves the terminal to the pane already showing it;
-//! p then a digit or Enter nest-attaches it in a popup over the terminal.
+//! its live children. The popup fits inside the pane, scrolling a long list; a pane too small
+//! for any list gets it over the terminal instead. A pick is shown through tx-client's
+//! [`Ui::show_session`], as the timeline's are: a row's key moves the cursor to it, then a (or
+//! Enter) lets the operator pick the pane to attach the chosen view into, starting on the pane
+//! prefix+a fired in (attach-to); p nest-attaches it in a popup over the terminal, titled with its
+//! tags and owner.
 //! In an artifact's view (a tx-client view bound to it) the key goes back to the controlling
 //! session: the artifact's most recent live non-`user` toucher, else its creator, else the view's
 //! parent agent; in another view, to its parent agent.
@@ -15,15 +18,16 @@
 use tx_client::render::{
     DIM_FG_ANSI, FG_ANSI, LOCATION_W, RESET_FG, location_text, tag_ansi, tag_hex,
 };
+use tx_client::show::Show;
 use tx_client::tmux::{Ui, shell_quote};
 use tx_client::views::View;
 use tx_core::{Agent, AgentId, ListFilter, LlmEngineState, TxCore, VerbError, VerbIo};
 
 use crate::artifact::{Artifact, Kind, USER_ACTOR};
-use crate::picker::{self, CHROME_ROWS, HINT, Item, Pick, row_label, visible_width};
+use crate::picker::{self, CHROME_ROWS, HINT, Item, row_label, visible_width};
 use crate::render::{actor_label, updated_at};
 use crate::service::ArtifactService;
-use crate::tmux::{self as tm, DIM_FG_HEX, FG_HEX};
+use crate::tmux::{self as tm, DIM_FG_HEX};
 use crate::views::{self, Opener, Shown};
 
 const NAME_FLOOR: usize = 12;
@@ -42,36 +46,6 @@ const NAME_GAP: usize = 3;
 pub const MENU_VERB: &str = "_artifact-menu";
 pub const PICK_VERB: &str = "_artifact-pick";
 pub const GO_VERB: &str = "_artifact-go";
-
-/// What a pick does with the chosen view.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Mode {
-    /// Re-host the pane the key fired in on the view.
-    Attach,
-    /// Move the terminal to the pane already hosting the view.
-    Focus,
-    /// Nest-attach the view in a popup over the terminal; the panes stay as they are.
-    Popup,
-}
-
-impl Mode {
-    pub fn parse(text: &str) -> Option<Self> {
-        match text {
-            "attach" => Some(Self::Attach),
-            "focus" => Some(Self::Focus),
-            "popup" => Some(Self::Popup),
-            _ => None,
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Attach => "attach",
-            Self::Focus => "focus",
-            Self::Popup => "popup",
-        }
-    }
-}
 
 /// What a row stands for, as `_artifact-go` names it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -192,12 +166,11 @@ pub fn sections(
     out
 }
 
-/// The picker's content laid out for a client's width; `names` and `targets` are per row.
+/// The picker's content laid out for a width; `targets` are per row.
 struct Listing {
     title: String,
     header: String,
     items: Vec<Item>,
-    names: Vec<String>,
     targets: Vec<Target>,
 }
 
@@ -260,12 +233,13 @@ impl Nav<'_> {
                 Some(artifact_id) => self.controlling_of(artifact_id)?.or(parent),
                 None => parent,
             };
-            return self.back_to(session, client, back);
+            return self.back_to(client, back);
         }
         let Some(record) = self.record(session, client) else {
             return Ok(1);
         };
-        let listing = self.listing(&record, client)?;
+        let (popup_client, columns, rows) = self.popup_area(client);
+        let listing = self.listing(&record, columns)?;
         let content = listing
             .items
             .iter()
@@ -273,12 +247,10 @@ impl Nav<'_> {
             .chain([visible_width(&listing.header), HINT.chars().count()])
             .max()
             .unwrap_or(0);
-        let (columns, rows) = self.client_size(client);
-        // tmux refuses a popup larger than its client; a list taller than that scrolls.
         let width = (content + POPUP_FRAME).min(columns);
         let height = (listing.items.len().max(1) + CHROME_ROWS + POPUP_BORDER_ROWS).min(rows);
         let shown = self.ui.display_popup(
-            client,
+            &popup_client,
             &width.to_string(),
             &height.to_string(),
             &listing.title,
@@ -292,10 +264,29 @@ impl Nav<'_> {
         Ok(0)
     }
 
+    /// The client the picker's popup goes on, with its columns and rows: `client`, whose screen
+    /// is the pane prefix+a fired in, unless that pane cannot hold the header, one row and the
+    /// hint inside a border; then the terminal it is shown on. `_artifact-pick` asks again, so
+    /// both lay the list out for the same width.
+    fn popup_area(&self, client: &str) -> (String, usize, usize) {
+        let size = |client: &str| tm::client_size(&self.ui, client).unwrap_or(DEFAULT_SIZE);
+        let (columns, rows) = size(client);
+        if rows > CHROME_ROWS + POPUP_BORDER_ROWS && columns >= HINT.chars().count() + POPUP_FRAME {
+            return (client.to_owned(), columns, rows);
+        }
+        match self.ui.outer_client(client) {
+            Some((outer, _)) => {
+                let (columns, rows) = size(&outer);
+                (outer, columns, rows)
+            }
+            None => (client.to_owned(), columns, rows),
+        }
+    }
+
     /// From a view: to the session it goes back to, or a notice when there is none.
-    fn back_to(&self, session: &str, client: &str, back: Option<String>) -> Result<i32, VerbError> {
+    fn back_to(&self, client: &str, back: Option<String>) -> Result<i32, VerbError> {
         match back {
-            Some(back) => self.go_back(session, client, &back),
+            Some(back) => self.go_back(client, &back),
             None => {
                 self.ui
                     .display_status(client, "prefix+a: nothing to go back to");
@@ -311,54 +302,36 @@ impl Nav<'_> {
             .map_err(failed)
     }
 
-    /// Inside the popup: run the list (a focus on a view no pane shows is declined with a
-    /// notice), then hand the choice to a background `_artifact-go` so the popup is gone before
-    /// the pane it sits on is re-hosted.
+    /// Inside the popup: run the list, then hand the choice to a background `_artifact-go` so the
+    /// popup is gone before the view is shown.
     pub fn pick(&self, session: &str, client: &str) -> Result<i32, VerbError> {
         let Some(record) = self.record(session, client) else {
             return Ok(1);
         };
-        let listing = self.listing(&record, client)?;
-        let decline = |pick: Pick| match pick {
-            Pick::Attach(_) | Pick::Popup(_) => None,
-            Pick::Focus(index) => match self.hosting_session(&listing.targets[index]) {
-                Ok(hosting) => {
-                    let hosted =
-                        hosting.is_some_and(|name| self.ui.pane_for_session(&name, "").is_some());
-                    (!hosted).then(|| format!("{} is not attached anywhere", listing.names[index]))
-                }
-                Err(error) => Some(error.to_string()),
-            },
-        };
-        let chosen = picker::pick(&listing.header, &listing.items, decline)
+        let (_, columns, _) = self.popup_area(client);
+        let listing = self.listing(&record, columns)?;
+        let chosen = picker::pick(&listing.header, &listing.items)
             .map_err(|error| failed(format!("picker: {error}")))?;
-        let Some(chosen) = chosen else {
+        let Some((show, index)) = chosen else {
             return Ok(0);
-        };
-        let (mode, index) = match chosen {
-            Pick::Attach(index) => (Mode::Attach, index),
-            Pick::Focus(index) => (Mode::Focus, index),
-            Pick::Popup(index) => (Mode::Popup, index),
         };
         let target = &listing.targets[index];
         let command = self.tx_command(&[
             GO_VERB,
             session,
             client,
-            mode.name(),
+            show.name(),
             target.kind,
             &target.id,
         ]);
-        tm::run_shell_background(&self.ui, &format!("{command} || true")).map_err(failed)?;
+        self.ui
+            .run_shell_background(&format!("{command} || true"))
+            .map_err(failed)?;
         Ok(0)
     }
 
-    /// `client`'s `(columns, rows)`: the pane prefix+a fired in, for a nested client.
-    fn client_size(&self, client: &str) -> (usize, usize) {
-        tm::client_size(&self.ui, client).unwrap_or(DEFAULT_SIZE)
-    }
-
-    fn listing(&self, record: &Agent, client: &str) -> Result<Listing, VerbError> {
+    /// The listing laid out for a popup on a client `columns` wide.
+    fn listing(&self, record: &Agent, columns: usize) -> Result<Listing, VerbError> {
         let touched = self.artifacts.artifacts_for_session(record.id.as_str());
         let live = self.live();
         let views = self.views()?;
@@ -371,11 +344,7 @@ impl Nav<'_> {
             |id| self.name_of(id),
         );
         let all_rows: Vec<&Row> = sections.iter().flat_map(|(_, rows)| rows).collect();
-        let layout = Layout::fit(
-            &all_rows,
-            self.client_size(client).0.saturating_sub(POPUP_FRAME),
-        );
-        let names = all_rows.iter().map(|row| row.name.clone()).collect();
+        let layout = Layout::fit(&all_rows, columns.saturating_sub(POPUP_FRAME));
         let mut items = Vec::new();
         let mut index = 0;
         for (title, rows) in &sections {
@@ -389,23 +358,7 @@ impl Nav<'_> {
             title: format!(" {} ", record.name),
             header: layout.header(),
             items,
-            names,
             targets,
-        })
-    }
-
-    /// The tmux session a row's view runs in: the agent's, the view itself, or the live view
-    /// bound to the artifact (`None` when the artifact has no live view).
-    fn hosting_session(&self, target: &Target) -> Result<Option<String>, VerbError> {
-        Ok(match target.kind {
-            "session" => target
-                .id
-                .parse::<AgentId>()
-                .ok()
-                .and_then(|id| self.core.get_agent(&id).ok())
-                .map(|session| session.name),
-            "view" => Some(target.id.clone()),
-            _ => self.live_view(&target.id)?.map(|shown| shown.name),
         })
     }
 
@@ -433,7 +386,7 @@ impl Nav<'_> {
         &self,
         session: &str,
         client: &str,
-        mode: Mode,
+        show: Show,
         artifact_id: &str,
     ) -> Result<i32, VerbError> {
         let Some(record) = self.record(session, client) else {
@@ -449,7 +402,7 @@ impl Nav<'_> {
                     else {
                         return Ok(1);
                     };
-                    return self.show(session, client, mode, &shown);
+                    return self.show(session, client, show, &shown);
                 }
                 let opener = Opener {
                     id: Some(record.id.clone()),
@@ -467,7 +420,7 @@ impl Nav<'_> {
                 .into()
             }
         };
-        self.show(session, client, mode, &shown)
+        self.show(session, client, show, &shown)
     }
 
     /// Open-by-convention, as `artifact open` does: runs `tx <kind> open <id> [--tag …]`
@@ -518,20 +471,20 @@ impl Nav<'_> {
         &self,
         session: &str,
         client: &str,
-        mode: Mode,
+        show: Show,
         target_id: &str,
     ) -> Result<i32, VerbError> {
         let Some(target) = self.running(client, target_id) else {
             return Ok(1);
         };
-        self.show(session, client, mode, &target.into())
+        self.show(session, client, show, &target.into())
     }
 
     pub fn go_view(
         &self,
         session: &str,
         client: &str,
-        mode: Mode,
+        show: Show,
         name: &str,
     ) -> Result<i32, VerbError> {
         let Some(view) = tx_client::views::get(&self.ui, name).map_err(failed)? else {
@@ -539,7 +492,7 @@ impl Nav<'_> {
                 .display_status(client, &format!("prefix+a: {name} has ended"));
             return Ok(1);
         };
-        self.show(session, client, mode, &view.into())
+        self.show(session, client, show, &view.into())
     }
 
     /// The target record when it runs and its tmux session exists; otherwise reported.
@@ -562,64 +515,12 @@ impl Nav<'_> {
     }
 
     /// The way back from a view: to the pane still showing the controlling session when this
-    /// terminal can reach one, else re-host this pane on it.
-    fn go_back(&self, session: &str, client: &str, target_id: &str) -> Result<i32, VerbError> {
+    /// terminal can reach one, else attach it into the pane the firing client paints into.
+    fn go_back(&self, client: &str, target_id: &str) -> Result<i32, VerbError> {
         let Some(target) = self.running(client, target_id) else {
             return Ok(1);
         };
-        if tm::focus_hosting_pane(&self.ui, client, &target.name).is_ok() {
-            return Ok(0);
-        }
-        self.rehost(session, client, &target.into())
-    }
-
-    fn show(
-        &self,
-        session: &str,
-        client: &str,
-        mode: Mode,
-        target: &Shown,
-    ) -> Result<i32, VerbError> {
-        match mode {
-            Mode::Focus => match tm::focus_hosting_pane(&self.ui, client, &target.name) {
-                Ok(()) => Ok(0),
-                Err(reason) => {
-                    self.ui
-                        .display_status(client, &format!("prefix+a: {}: {reason}", target.name));
-                    Ok(1)
-                }
-            },
-            Mode::Popup => {
-                let outer = self
-                    .ui
-                    .outer_client(client)
-                    .map_or_else(|| client.to_owned(), |(outer, _)| outer);
-                let prefix =
-                    tm::global_option(&self.ui, "prefix").unwrap_or_else(|| "C-b".to_owned());
-                let owner = self
-                    .core
-                    .resolve(session)
-                    .and_then(|id| self.core.get_agent(&id));
-                self.ui
-                    .popup_attach(
-                        &outer,
-                        &popup_title(target, owner.ok().as_ref()),
-                        &popup_footer(&prefix),
-                        &target.name,
-                    )
-                    .map_err(failed)?;
-                Ok(0)
-            }
-            Mode::Attach => self.rehost(session, client, target),
-        }
-    }
-
-    /// Re-host the pane the firing client paints into on `target` (`respawn-pane -k` onto a
-    /// nested attach; the session it showed keeps running detached).
-    fn rehost(&self, session: &str, client: &str, target: &Shown) -> Result<i32, VerbError> {
-        if session == target.name {
-            self.ui
-                .display_status(client, &format!("prefix+a: already in {}", target.name));
+        if self.ui.focus_session(client, &target.name).is_ok() {
             return Ok(0);
         }
         let Some(pane) = tm::pane_hosting_client(&self.ui, client) else {
@@ -627,10 +528,47 @@ impl Nav<'_> {
                 .display_status(client, "prefix+a: this session is not hosted in a pane");
             return Ok(1);
         };
-        self.ui
-            .respawn_pane(&pane, &self.ui.nest_attach_command(&target.name))
-            .map_err(failed)?;
-        Ok(0)
+        let outcome = self.ui.attach_into(&pane, &target.name);
+        Ok(self.reported(client, &target.name, outcome))
+    }
+
+    /// Show `target` through tx-client: attach-to starts on the pane the firing client paints
+    /// into; the popup is titled with the view's tags and the session prefix+a fired in.
+    fn show(
+        &self,
+        session: &str,
+        client: &str,
+        show: Show,
+        target: &Shown,
+    ) -> Result<i32, VerbError> {
+        let outcome = match show {
+            Show::Popup => {
+                let owner = self
+                    .core
+                    .resolve(session)
+                    .and_then(|id| self.core.get_agent(&id));
+                let title = popup_title(target, owner.ok().as_ref());
+                self.ui.show_popup(client, &target.name, &title)
+            }
+            Show::Focus | Show::AttachTo => {
+                let pane = tm::pane_hosting_client(&self.ui, client);
+                self.ui
+                    .show_session(client, show, &target.name, pane.as_deref())
+            }
+        };
+        Ok(self.reported(client, &target.name, outcome))
+    }
+
+    /// 0, else the reason on `client`'s status line and 1.
+    fn reported(&self, client: &str, name: &str, outcome: Result<(), String>) -> i32 {
+        match outcome {
+            Ok(()) => 0,
+            Err(reason) => {
+                self.ui
+                    .display_status(client, &format!("prefix+a: {name}: {reason}"));
+                1
+            }
+        }
     }
 
     /// The artifact's most recent live non-`user` toucher, else its creator (`None` when the
@@ -669,14 +607,6 @@ fn popup_title(view: &Shown, owner: Option<&Agent>) -> String {
         ));
     }
     title
-}
-
-/// The popup's bottom line: how to leave it.
-fn popup_footer(prefix: &str) -> String {
-    format!(
-        " #[fg={FG_HEX}]{prefix} d#[fg={DIM_FG_HEX}] close, the view keeps running   \
-         #[fg={FG_HEX}]:q#[fg={DIM_FG_HEX}] in nvim ends the view"
-    )
 }
 
 impl Row {
@@ -915,13 +845,5 @@ mod tests {
         let wide = Layout::fit(&[&row], 120);
         assert!(wide.location);
         assert!(wide.header().contains("LOCATION"));
-    }
-
-    #[test]
-    fn modes_round_trip() {
-        for mode in [Mode::Attach, Mode::Focus, Mode::Popup] {
-            assert_eq!(Mode::parse(mode.name()), Some(mode));
-        }
-        assert_eq!(Mode::parse("x"), None);
     }
 }

@@ -3,8 +3,9 @@
 # tx key plugin `artifacts`: prefix+a opens the artifacts menu of the tx session the key fired
 # in. While the pane hosts a `tmux` client the key is re-sent one level down, so the bind that
 # finally runs sees the NESTED session: `#{session_name}` is that session and `#{client_name}`
-# the nested client, and the menu paints inside the pane. A pick re-hosts that pane on the
-# artifact's nvim view; in a view the key goes back to the controlling session. The prefix is
+# the nested client, and the menu paints inside the pane. A pick is shown through tx-client's
+# `show` (attach-to into a pane you pick, or a popup); in a view the key goes back to the
+# controlling session. The prefix is
 # read at compose time (run-shell runs after the theme set it), as for the nav keys. Run by
 # `run-shell` from the server's tmux.conf, which `tx update` writes; @tx-data names the
 # directory holding bin/tmux-artifact-menu.

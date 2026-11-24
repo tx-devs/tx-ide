@@ -63,7 +63,7 @@ impl Ui {
         match show {
             Show::Focus => self.focus_session(client, session),
             Show::AttachTo => self.start_attach_to(client, session, pane),
-            Show::Popup => self.deferred_popup_attach(client, session),
+            Show::Popup => self.show_popup(client, session, &format!(" {session} ")),
         }
     }
 
@@ -104,10 +104,11 @@ impl Ui {
         .map_err(|error| error.to_string())
     }
 
-    /// `session` in a popup over the terminal, opened from a background `run-shell` so that it
-    /// waits for a popup the caller may be running in; its footer says how to leave, and goes
-    /// with the popup.
-    fn deferred_popup_attach(&self, client: &str, session: &str) -> Result<(), String> {
+    /// `session` in a popup over the terminal `client` is shown on, titled `title` (a tmux
+    /// format), opened from a background `run-shell` so that it waits for a popup the caller may
+    /// be running in; its footer says how to leave, and goes with the popup. [`Show::Popup`]
+    /// titled with something other than the session's name.
+    pub fn show_popup(&self, client: &str, session: &str, title: &str) -> Result<(), String> {
         let (outer, _) = self.outer_or_err(client)?;
         let prefix = self
             .quiet(&["show-option", "-gv", "prefix"])
@@ -131,13 +132,7 @@ impl Ui {
                 .map_err(|error| error.to_string())?;
         }
         let attach = crate::tmux::popup_attach_command(&self.socket_text(), &shown);
-        let popup = popup_args(
-            &outer,
-            POPUP_SIZE,
-            POPUP_SIZE,
-            &format!(" {session} "),
-            &attach,
-        );
+        let popup = popup_args(&outer, POPUP_SIZE, POPUP_SIZE, title, &attach);
         let popup: Vec<&str> = popup.iter().map(String::as_str).collect();
         let mut script = vec![self.shell_command(&popup)];
         // The whole `status-format` array: unsetting only `[0]` blanks the global status line.

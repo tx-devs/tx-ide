@@ -23,7 +23,7 @@ verbs:
     bin: tx-artifacts
     args: [_artifact-pick]
   - name: _artifact-go
-    usage: "_artifact-go <session> <client> attach|focus|popup artifact|session|view <id>   show a view (internal)"
+    usage: "_artifact-go <session> <client> attach-to|popup artifact|session|view <id>   show a view (internal)"
     bin: tx-artifacts
     args: [_artifact-go]
 

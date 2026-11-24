@@ -2,21 +2,21 @@
 //! drawn like the session picker's rows.
 //!
 //! Pure list logic ([`Picker`]), keys in and the chosen action out, around tx-client's editor
-//! terminal layer. Enter attaches the cursor's row in the pane and a digit attaches that row;
-//! f (focus the pane already showing it) and p (open it in a popup) arm the operation instead,
-//! and the next digit or Enter applies it to that row — so `f 3` focuses the third row, as does
-//! `f ↓ ↓ Enter`. Rows past the ninth take choose-tree's keys: `M-a`…`M-z`, then `M-A`…`M-Z`.
-//! Esc disarms, then closes (q too). A pick the caller declines (a focus with nothing to focus)
-//! becomes a notice line and the list stays open.
+//! terminal layer. A row's key (`1`…`9`, then choose-tree's `M-a`…`M-z`, `M-A`…`M-Z`) moves the
+//! cursor to that row, as j/k and the arrows move it by one. Then, as on a timeline lane, the
+//! picks are tx-client's ways of showing a session ([`Show`]): a (or Enter) attaches the cursor's
+//! row into a pane the operator picks next (attach-to), p opens it in a popup. Esc, q or Ctrl-C
+//! close. A list taller than the popup scrolls with the cursor.
 
 use std::io;
 
 use tx_client::editor::{Decoder, Key, Terminal, read_key, write_all};
-use tx_client::render::{ACCENT_ANSI, BOLD, DIM_FG_ANSI, RESET, SELECTION_BG, WARN_ANSI};
+use tx_client::render::{ACCENT_ANSI, BOLD, DIM_FG_ANSI, RESET, SELECTION_BG};
+use tx_client::show::Show;
 
-pub const HINT: &str = "Enter/key attach here   f focus its pane   p popup   Esc close";
-/// Screen lines that are not list: the header, a blank line, the notice line and the hint.
-pub const CHROME_ROWS: usize = 4;
+pub const HINT: &str = "key go to row   a attach to a pane   p popup   Esc close";
+/// Screen lines that are not list: the header, a blank line and the hint.
+pub const CHROME_ROWS: usize = 3;
 
 /// The key that picks row `index` (0-based), as choose-tree labels them: `1`…`9`, then `M-a`…
 /// `M-z`, then `M-A`…`M-Z`; `None` past those.
@@ -48,39 +48,8 @@ pub fn row_label(index: usize) -> String {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Pick {
-    Attach(usize),
-    Focus(usize),
-    /// Open the row's view nest-attached in a popup over the terminal.
-    Popup(usize),
-}
-
-/// What f / p arm: the operation the next digit or Enter applies.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Operation {
-    Attach,
-    Focus,
-    Popup,
-}
-
-impl Operation {
-    fn pick(self, index: usize) -> Pick {
-        match self {
-            Self::Attach => Pick::Attach(index),
-            Self::Focus => Pick::Focus(index),
-            Self::Popup => Pick::Popup(index),
-        }
-    }
-
-    fn hint(self) -> &'static str {
-        match self {
-            Self::Attach => HINT,
-            Self::Focus => "focus mode: digit or Enter picks the row   Esc back",
-            Self::Popup => "popup mode: digit or Enter picks the row   Esc back",
-        }
-    }
-}
+/// A pick: how to show which row.
+pub type Pick = (Show, usize);
 
 /// One line of the list: a section title (not selectable) or a fully styled row (SGR, no
 /// background). Rows are numbered in order across sections.
@@ -105,11 +74,6 @@ pub struct Picker<'a> {
     items: &'a [Item],
     rows: usize,
     cursor: usize,
-    /// The operation f / p armed; Enter and digits (rows are numbered from 1) apply it.
-    /// `Attach` when nothing is armed.
-    operation: Operation,
-    /// A one-line message under the rows (a declined pick); the next key clears it.
-    notice: Option<String>,
 }
 
 impl<'a> Picker<'a> {
@@ -122,35 +86,24 @@ impl<'a> Picker<'a> {
                 .filter(|item| matches!(item, Item::Row(_)))
                 .count(),
             cursor: 0,
-            operation: Operation::Attach,
-            notice: None,
         }
-    }
-
-    pub fn notice(&mut self, text: String) {
-        self.notice = Some(text);
     }
 
     /// `Some(Some(pick))` chooses, `Some(None)` cancels, `None` keeps going.
     pub fn handle(&mut self, key: Key) -> Option<Option<Pick>> {
-        self.notice = None;
         match key {
             Key::Up | Key::Char('k') => self.cursor = self.cursor.saturating_sub(1),
             Key::Down | Key::Char('j') => {
                 self.cursor = (self.cursor + 1).min(self.rows.saturating_sub(1));
             }
-            Key::Enter | Key::Char('\r') | Key::Char('\n') => {
-                return Some(self.row().map(|index| self.disarm().pick(index)));
+            Key::Char('a') | Key::Enter | Key::Char('\r') | Key::Char('\n') => {
+                return Some(self.row().map(|index| (Show::AttachTo, index)));
             }
-            Key::Char('f') => self.operation = Operation::Focus,
-            Key::Char('p') => self.operation = Operation::Popup,
+            Key::Char('p') => return Some(self.row().map(|index| (Show::Popup, index))),
             Key::Char('1'..='9') | Key::Alt(_) => {
                 if let Some(index) = row_index(key).filter(|index| *index < self.rows) {
-                    return Some(Some(self.disarm().pick(index)));
+                    self.cursor = index;
                 }
-            }
-            Key::Char('\x1b') if self.operation != Operation::Attach => {
-                self.disarm();
             }
             Key::Char('\x1b' | 'q' | '\x03') => return Some(None),
             _ => {}
@@ -160,11 +113,6 @@ impl<'a> Picker<'a> {
 
     fn row(&self) -> Option<usize> {
         (self.rows > 0).then_some(self.cursor)
-    }
-
-    /// Back to plain attach; the operation that was armed.
-    fn disarm(&mut self) -> Operation {
-        std::mem::replace(&mut self.operation, Operation::Attach)
     }
 
     /// The position in `items` of the cursor's row.
@@ -177,9 +125,8 @@ impl<'a> Picker<'a> {
             .map_or(0, |(position, _)| position)
     }
 
-    /// The screen: the header, the items that fit between it and the notice and hint lines
-    /// (scrolled just far enough to show the cursor's row, on the selection background), the
-    /// hint last.
+    /// The screen: the header, the items that fit between it and the hint (scrolled just far
+    /// enough to show the cursor's row, on the selection background), the hint last.
     pub fn render(&self, height: usize, width: usize) -> String {
         let mut out = String::from("\x1b[0m\x1b[H\x1b[2J");
         let mut put = |screen_row: usize, text: &str| {
@@ -209,13 +156,7 @@ impl<'a> Picker<'a> {
             put(1 + offset, &line);
         }
         if height >= CHROME_ROWS {
-            if let Some(notice) = &self.notice {
-                put(height - 2, &format!("{WARN_ANSI}{notice}"));
-            }
-            put(
-                height - 1,
-                &format!("{DIM_FG_ANSI}{}", self.operation.hint()),
-            );
+            put(height - 1, &format!("{DIM_FG_ANSI}{HINT}"));
         }
         out
     }
@@ -239,13 +180,8 @@ pub fn visible_width(text: &str) -> usize {
     width
 }
 
-/// Run the picker on the controlling terminal; `None` on Esc / q / Ctrl-C. `decline` vets a pick:
-/// `Some(message)` shows it as the notice and keeps the list open, `None` accepts the pick.
-pub fn pick(
-    header: &str,
-    items: &[Item],
-    mut decline: impl FnMut(Pick) -> Option<String>,
-) -> io::Result<Option<Pick>> {
+/// Run the picker on the controlling terminal; `None` on Esc / q / Ctrl-C.
+pub fn pick(header: &str, items: &[Item]) -> io::Result<Option<Pick>> {
     let _terminal = Terminal::open()?;
     let mut picker = Picker::new(header, items);
     let mut decoder = Decoder::default();
@@ -253,13 +189,8 @@ pub fn pick(
         let (height, width) = Terminal::size();
         write_all(picker.render(height, width).as_bytes())?;
         let key = read_key(&mut decoder, (height, width))?;
-        match picker.handle(key) {
-            Some(Some(chosen)) => match decline(chosen) {
-                Some(message) => picker.notice(message),
-                None => return Ok(Some(chosen)),
-            },
-            Some(None) => return Ok(None),
-            None => {}
+        if let Some(chosen) = picker.handle(key) {
+            return Ok(chosen);
         }
     }
 }
@@ -269,21 +200,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keys_move_choose_and_cancel() {
-        let items = vec![Item::Row("a".to_owned()), Item::Row("b".to_owned())];
-        let mut picker = Picker::new("H", &items);
-        assert_eq!(picker.handle(Key::Down), None);
-        assert_eq!(picker.handle(Key::Enter), Some(Some(Pick::Attach(1))));
-        assert_eq!(picker.handle(Key::Char('1')), Some(Some(Pick::Attach(0))));
-        assert_eq!(picker.handle(Key::Char('0')), None);
-        assert_eq!(picker.handle(Key::Char('7')), None);
-        assert_eq!(picker.handle(Key::Right), None);
-        assert_eq!(picker.handle(Key::Char('l')), None);
-        assert_eq!(picker.handle(Key::Char('q')), Some(None));
-    }
-
-    #[test]
-    fn f_and_p_arm_the_operation_for_the_next_digit_or_enter() {
+    fn keys_go_to_a_row_a_attaches_to_p_pops_up() {
         let items = vec![
             Item::Section("X".to_owned()),
             Item::Row("a".to_owned()),
@@ -292,20 +209,20 @@ mod tests {
             Item::Row("c".to_owned()),
         ];
         let mut picker = Picker::new("H", &items);
-        assert_eq!(picker.handle(Key::Char('f')), None);
-        assert!(picker.render(10, 40).contains("focus mode:"));
-        assert_eq!(picker.handle(Key::Char('3')), Some(Some(Pick::Focus(2))));
-        // Applied once: the next Enter is a plain attach again.
-        assert_eq!(picker.handle(Key::Enter), Some(Some(Pick::Attach(0))));
-        assert_eq!(picker.handle(Key::Char('p')), None);
         assert_eq!(picker.handle(Key::Down), None);
-        assert_eq!(picker.handle(Key::Down), None);
-        assert_eq!(picker.handle(Key::Enter), Some(Some(Pick::Popup(2))));
-        // Esc disarms first, then closes.
+        assert_eq!(picker.handle(Key::Enter), Some(Some((Show::AttachTo, 1))));
+        assert_eq!(picker.handle(Key::Char('3')), None);
+        assert_eq!(
+            picker.handle(Key::Char('a')),
+            Some(Some((Show::AttachTo, 2)))
+        );
+        assert_eq!(picker.handle(Key::Char('1')), None);
+        assert_eq!(picker.handle(Key::Char('p')), Some(Some((Show::Popup, 0))));
+        assert_eq!(picker.handle(Key::Char('0')), None);
+        assert_eq!(picker.handle(Key::Char('7')), None);
         assert_eq!(picker.handle(Key::Char('f')), None);
-        assert_eq!(picker.handle(Key::Char('\x1b')), None);
-        assert!(picker.render(10, 40).contains(HINT));
-        assert_eq!(picker.handle(Key::Char('\x1b')), Some(None));
+        assert_eq!(picker.handle(Key::Char('l')), None);
+        assert_eq!(picker.handle(Key::Char('q')), Some(None));
     }
 
     #[test]
@@ -323,20 +240,9 @@ mod tests {
         assert_eq!(row_label(9), "(M-a)");
         let items: Vec<Item> = (0..12).map(|i| Item::Row(i.to_string())).collect();
         let mut picker = Picker::new("H", &items);
-        assert_eq!(picker.handle(Key::Alt('c')), Some(Some(Pick::Attach(11))));
+        assert_eq!(picker.handle(Key::Alt('c')), None);
         assert_eq!(picker.handle(Key::Alt('d')), None);
-        assert_eq!(picker.handle(Key::Char('f')), None);
-        assert_eq!(picker.handle(Key::Alt('a')), Some(Some(Pick::Focus(9))));
-    }
-
-    #[test]
-    fn notice_shows_under_the_rows_until_the_next_key() {
-        let items = vec![Item::Row("a".to_owned())];
-        let mut picker = Picker::new("H", &items);
-        picker.notice("nope".into());
-        assert!(picker.render(6, 20).contains("nope"));
-        picker.handle(Key::Down);
-        assert!(!picker.render(6, 20).contains("nope"));
+        assert_eq!(picker.handle(Key::Char('p')), Some(Some((Show::Popup, 11))));
     }
 
     #[test]
@@ -344,14 +250,14 @@ mod tests {
         let mut items = vec![Item::Section("S".to_owned())];
         items.extend((0..10).map(|i| Item::Row(format!("row{i}"))));
         let mut picker = Picker::new("H", &items);
-        // 8 lines: the header, 4 of list, a blank, the notice line, the hint.
-        let screen = picker.render(8, 20);
+        // 7 lines: header, 4 of list, a blank, the hint.
+        let screen = picker.render(7, 20);
         assert!(screen.contains("S") && screen.contains("row2") && !screen.contains("row3"));
         assert!(screen.contains(HINT));
         for _ in 0..5 {
             picker.handle(Key::Down);
         }
-        let screen = picker.render(8, 20);
+        let screen = picker.render(7, 20);
         assert!(screen.contains("row2") && screen.contains("row5"));
         assert!(!screen.contains("row1") && !screen.contains("row6"));
         assert!(screen.contains(HINT));

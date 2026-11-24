@@ -719,6 +719,21 @@ fn outer_keys(cli: &Cli, keys: &[&str]) {
     assert!(output.status.success(), "{output:?}");
 }
 
+/// The key table of the terminal client (the one on `home`).
+fn terminal_table(cli: &Cli) -> String {
+    cli.tmux_out(&["list-clients", "-t", "=home", "-F", "#{client_key_table}"])
+}
+
+/// The picker's a starts attach-to on the pane prefix+a fired in; Enter there attaches.
+fn attach_here(cli: &Cli) {
+    outer_keys(cli, &["a"]);
+    assert!(
+        cli.wait_for(10, || terminal_table(cli) == "tx-attach-to"),
+        "attach-to never started"
+    );
+    outer_keys(cli, &["Enter"]);
+}
+
 fn running_pick(cli: &Cli) -> bool {
     let output = Command::new("ps")
         .args(["-axo", "command"])
@@ -729,8 +744,8 @@ fn running_pick(cli: &Cli) -> bool {
         .any(|line| line.contains("_artifact-pick") && line.contains(cli.state().to_str().unwrap()))
 }
 
-/// Gate: prefix+a in an agent pane lists what it touched; Enter attaches the chosen artifact's
-/// view in that pane.
+/// Gate: prefix+a in an agent pane lists what it touched; a starts attach-to on that pane,
+/// whose Enter attaches the chosen artifact's view there.
 #[test]
 fn prefix_a_in_an_agent_pane_attaches_the_chosen_artifact() {
     require_tmux!();
@@ -751,7 +766,7 @@ fn prefix_a_in_an_agent_pane_attaches_the_chosen_artifact() {
         "the picker never opened"
     );
     std::thread::sleep(std::time::Duration::from_millis(500));
-    outer_keys(&cli, &["Enter"]);
+    attach_here(&cli);
     assert!(
         cli.wait_for(10, || client_sessions(&cli) == ["home", "plan-md"]),
         "{:?}",
@@ -786,7 +801,7 @@ fn prefix_a_in_an_agent_pane_attaches_the_chosen_artifact() {
         "the picker never opened"
     );
     std::thread::sleep(std::time::Duration::from_millis(500));
-    outer_keys(&cli, &["Enter"]);
+    attach_here(&cli);
     assert!(
         cli.wait_for(10, || client_sessions(&cli) == ["home", "plan-md"]),
         "{:?}",
@@ -848,51 +863,47 @@ fn prefix_a_in_a_short_pane_opens_a_clamped_scrolling_picker() {
     );
 }
 
-/// Gate: a pick in focus mode moves the terminal to the pane already showing the view.
+/// Gate: an attach-to pick hands the terminal's keys to the `tx-attach-to` table, starting on
+/// the pane the firing client paints into; a session or view that is gone is reported, exit 1;
+/// focus is not a pick.
 #[test]
-fn artifact_go_focus_moves_to_the_pane_showing_the_view() {
+fn artifact_go_attach_to_starts_on_the_firing_pane() {
     require_tmux!();
     let cli = Cli::new();
     let (a, artifact) = operator(&cli);
-    ok_as(&cli, &a, &["artifact", "open", &artifact]);
-    let sock = cli.sock().display().to_string();
-    let nest = format!("bash -c 'set -m; TMUX= tmux -S {sock} attach -t =plan-md; exec sh'");
-    assert!(
-        cli.tmux(&["new-window", "-d", "-t", "=home:", &nest])
-            .status
-            .success()
-    );
-    assert!(
-        cli.wait_for(5, || client_sessions(&cli) == ["a", "home", "plan-md"]),
-        "{:?}",
-        client_sessions(&cli)
-    );
-    let active = || cli.tmux_out(&["display-message", "-p", "-t", "=home:", "#{window_index}"]);
-    let before = active();
     let client = nested_client(&cli);
-    cli.ok(&["_artifact-go", "a", &client, "focus", "artifact", &artifact]);
+    let hosting = cli.tmux_out(&["list-panes", "-t", "=home:", "-F", "#{pane_id}"]);
+    cli.ok(&[
+        "_artifact-go",
+        "a",
+        &client,
+        "attach-to",
+        "artifact",
+        &artifact,
+    ]);
+    assert_eq!(terminal_table(&cli), "tx-attach-to");
+    assert_eq!(
+        cli.tmux_out(&["show-options", "-gv", "@tx-attach-to-session"]),
+        "plan-md"
+    );
+    assert_eq!(
+        cli.tmux_out(&["display-message", "-p", "-t", "=home:", "#{pane_id}"]),
+        hosting
+    );
+    outer_keys(&cli, &["Escape"]);
     assert!(
-        cli.wait_for(5, || active() != before),
-        "window stayed {before}"
+        cli.wait_for(5, || terminal_table(&cli) == "root"),
+        "Escape never left attach-to"
     );
 
-    // Focus on a session no pane shows is reported, exit 1.
-    cli.ok(&["_artifact-go", "a", &client, "focus", "session", &a]);
-    let lone = cli.create("lone");
-    let output = cli.run(
-        &["_artifact-go", "a", &client, "focus", "session", &lone],
-        &[],
-        "",
+    cli.ok(&["_artifact-go", "a", &client, "attach-to", "session", &a]);
+    assert_eq!(
+        cli.tmux_out(&["show-options", "-gv", "@tx-attach-to-session"]),
+        "a"
     );
-    assert_eq!(output.status.code(), Some(1));
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("lone: not attached to any pane"),
-        "{output:?}"
-    );
-    // A view row: shown by name, reported once it is gone.
-    cli.ok(&["_artifact-go", "a", &client, "focus", "view", "plan-md"]);
+    outer_keys(&cli, &["Escape"]);
     let output = cli.run(
-        &["_artifact-go", "a", &client, "focus", "view", "gone"],
+        &["_artifact-go", "a", &client, "attach-to", "view", "gone"],
         &[],
         "",
     );
@@ -900,6 +911,10 @@ fn artifact_go_focus_moves_to_the_pane_showing_the_view() {
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("gone has ended"),
         "{output:?}"
+    );
+    cli.fails(
+        &["_artifact-go", "a", &client, "focus", "artifact", &artifact],
+        2,
     );
 }
 
