@@ -57,21 +57,17 @@ pub fn next(current: Option<usize>, len: usize) -> Option<usize> {
     (following < len).then_some(following)
 }
 
-/// Whether home drew this cell: a glyph, or a background such as the cursor bar.
+/// Whether home drew this cell: a glyph, a background, or a reverse cursor bar.
 pub fn is_text(cell: &Cell) -> bool {
-    cell.symbol() != " " || cell.bg != Color::Reset
+    cell.symbol() != " "
+        || cell.bg != Color::Reset
+        || cell.modifier.contains(ratatui::style::Modifier::REVERSED)
 }
 
 pub const MINIMUM_LIST_ROWS: u16 = 10;
 
-/// Plain "tx-ide" block letters.
-pub const LOGO: &[&str] = &[
-    "███ █ █     ███   █ ███",
-    " █  █ █      █    █ █  ",
-    " █   █  ███  █  ███ ███",
-    " █  █ █      █  █ █ █  ",
-    " █  █ █     ███ ███ ███",
-];
+/// Box-drawn Junction "tx" mark, shared with `tx_client::theme::BANNER_UNICODE`.
+pub const LOGO: &[&str] = tx_client::theme::BANNER_UNICODE;
 
 /// (logo box, content area). The logo shows when `area.width >= logo width` and
 /// `area.height >= logo height + 1 (gap) + MINIMUM_LIST_ROWS + 2 (header, footer)`.

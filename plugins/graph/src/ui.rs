@@ -20,11 +20,9 @@ use tx_chat::transcript::clock;
 use crate::app::{App, Mode, PULSE_TRAVEL, Purpose};
 use crate::layout;
 use crate::model::{Edge, Graph, Node, NodeState};
-use tx_client::palette::{
-    ACCENT, BG_DEEP, BORDER_DIM, DIM_FG, FG, GREEN, INFO, ON_ACCENT, WARN, palette,
-};
+use tx_client::theme::{Role, active};
 
-/// Above this share of its window, a context gauge turns WARN.
+/// Above this share of its window, a context gauge turns signal amber.
 const CONTEXT_WARN: f64 = 0.8;
 /// How far a sibling arc bulges right of its column.
 const ARC_BULGE: f64 = 7.0;
@@ -56,10 +54,9 @@ const KEYS: [(&str, &str); 14] = [
     ("", ""),
     (
         "legend",
-        "● working  ○ idle or ended  ◐ starting  ▲ needs you  ◇ you",
+        "● working  ○ idle  × ended  ▖ starting  ▲ needs you  ◇ you",
     ),
 ];
-const SPINNER: [&str; 4] = ["◐", "◓", "◑", "◒"];
 /// Seconds of one breath of a working node's border.
 const BREATH_PERIOD: f64 = 2.4;
 /// Dots behind a pulse's head, each a step further back along the edge.
@@ -77,32 +74,45 @@ const BUS_OFFSET: f64 = 2.0;
 /// Cells on, then off, in a dashed (lineage-only) edge.
 const DASH: f64 = 1.5;
 
-fn colour(color: Color) -> Style {
-    Style::new().fg(palette(color))
+fn role(role: Role) -> Style {
+    active().style(role)
 }
 
 fn dim() -> Style {
-    colour(DIM_FG).add_modifier(Modifier::DIM)
+    role(Role::Muted)
 }
 
-fn bold(color: Color) -> Style {
-    colour(color).add_modifier(Modifier::BOLD)
+fn bold(target: Role) -> Style {
+    active().bold(target)
 }
 
-/// `from` moved `amount` (0..1) of the way to `to`, before the palette maps it.
-fn mix(from: Color, to: Color, amount: f64) -> Color {
-    let (Color::Rgb(red, green, blue), Color::Rgb(to_red, to_green, to_blue)) = (from, to) else {
+fn color_of(target: Role) -> Color {
+    active().color(target).unwrap_or(Color::Reset)
+}
+
+fn style_of_color(color: Option<Color>) -> Style {
+    match color {
+        Some(color) => Style::new().fg(color),
+        None => Style::new(),
+    }
+}
+
+/// `from` moved `amount` (0..1) of the way to `to`, mapped through the active theme's depth.
+fn mix(from: Option<Color>, to: Option<Color>, amount: f64) -> Option<Color> {
+    let (Some(Color::Rgb(red, green, blue)), Some(Color::Rgb(to_red, to_green, to_blue))) =
+        (from, to)
+    else {
         return from;
     };
     let blend = |start: u8, end: u8| {
         (f64::from(start) + (f64::from(end) - f64::from(start)) * amount.clamp(0.0, 1.0)).round()
             as u8
     };
-    Color::Rgb(
+    active().map_color(Color::Rgb(
         blend(red, to_red),
         blend(green, to_green),
         blend(blue, to_blue),
-    )
+    ))
 }
 
 /// `text` cut to `width` characters, the last one `…` when cut.
@@ -156,31 +166,34 @@ fn tokens(count: u64) -> String {
     }
 }
 
-/// The state's glyph at `clock`: the starting spinner turns at 4 Hz, the needs-you ▲ blinks at
-/// 2 Hz.
+/// The state's glyph at `clock`: the starting quadrant turns at 4 Hz; needs-you ▲ is steady.
 fn glyph(state: NodeState, clock: f64) -> &'static str {
+    let glyphs = active().glyphs;
     match state {
-        NodeState::Operator => "◇",
-        NodeState::Starting => SPINNER[(clock * 4.0) as usize % SPINNER.len()],
-        NodeState::Working => "●",
-        NodeState::Idle | NodeState::Ended => "○",
-        NodeState::NeedsYou if (clock * 2.0).fract() < 0.6 => "▲",
-        NodeState::NeedsYou => " ",
+        NodeState::Operator => glyphs.operator,
+        NodeState::Starting => glyphs.starting[(clock * 4.0) as usize % glyphs.starting.len()],
+        NodeState::Working => glyphs.working,
+        NodeState::Idle => glyphs.idle,
+        NodeState::Ended => glyphs.ended,
+        NodeState::NeedsYou => glyphs.needs_you,
     }
 }
 
-/// A working node's border at `clock`: GREEN breathing down to 45% and back.
-fn breathing(clock: f64) -> Color {
+/// A working node's border at `clock`: working colour breathing down to 45% and back.
+fn breathing(clock: f64) -> Option<Color> {
+    let theme = active();
+    let working = theme.color(Role::Working);
+    let surface = theme.color(Role::Surface);
     let breath = 0.5 + 0.5 * (clock * TAU / BREATH_PERIOD).sin();
-    mix(mix(GREEN, BG_DEEP, 0.55), GREEN, breath)
+    mix(mix(working, surface, 0.55), working, breath)
 }
 
-fn state_colour(state: NodeState) -> Color {
+fn state_role(state: NodeState) -> Role {
     match state {
-        NodeState::Operator => FG,
-        NodeState::Working => GREEN,
-        NodeState::Starting | NodeState::NeedsYou => WARN,
-        NodeState::Idle | NodeState::Ended => DIM_FG,
+        NodeState::Operator => Role::Text,
+        NodeState::Working => Role::Working,
+        NodeState::NeedsYou => Role::Signal,
+        NodeState::Starting | NodeState::Idle | NodeState::Ended => Role::Muted,
     }
 }
 
@@ -241,7 +254,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 /// The notice, else the open prompt or confirmation, else the key hints.
 fn footer_line(app: &App) -> Line<'static> {
     if let Some(notice) = &app.notice {
-        return Line::styled(format!("  {notice}"), colour(WARN));
+        return Line::styled(format!("  {notice}"), role(Role::Signal));
     }
     let name = app
         .graph
@@ -250,19 +263,22 @@ fn footer_line(app: &App) -> Line<'static> {
         .map_or(String::new(), |node| node.name.clone());
     match &app.mode {
         Mode::Prompt { purpose, text } => {
+            let prompt_glyph = active().glyphs.prompt;
             let label = match purpose {
-                Purpose::Send => format!("  send to {name} ▸ "),
-                Purpose::Fork => format!("  fork {name} as (blank: {name}-fork) ▸ "),
+                Purpose::Send => format!("  send to {name} {prompt_glyph} "),
+                Purpose::Fork => {
+                    format!("  fork {name} as (blank: {name}-fork) {prompt_glyph} ")
+                }
             };
             Line::from(vec![
-                Span::styled(label, bold(ACCENT)),
-                Span::styled(text.clone(), colour(FG)),
-                Span::styled("▏", colour(ACCENT)),
+                Span::styled(label, bold(Role::Accent)),
+                Span::styled(text.clone(), role(Role::Text)),
+                Span::styled("▏", role(Role::Accent)),
                 Span::styled("   enter · esc cancels", dim()),
             ])
         }
         Mode::ConfirmStop => Line::from(vec![
-            Span::styled(format!("  stop {name}? "), bold(WARN)),
+            Span::styled(format!("  stop {name}? "), bold(Role::Signal)),
             Span::styled("y stops · any other key cancels", dim()),
         ]),
         Mode::Help => Line::styled("  any key closes", dim()),
@@ -280,10 +296,10 @@ fn footer_line(app: &App) -> Line<'static> {
 
 /// Every key, as home's `?` page lists them.
 fn help_page() -> Paragraph<'static> {
-    let mut lines = vec![Line::styled("  keys", bold(ACCENT)), Line::raw("")];
+    let mut lines = vec![Line::styled("  keys", bold(Role::Accent)), Line::raw("")];
     for (key, meaning) in KEYS {
         lines.push(Line::from(vec![
-            Span::styled(format!("  {key:<14}"), colour(FG)),
+            Span::styled(format!("  {key:<14}"), role(Role::Text)),
             Span::styled(meaning, dim()),
         ]));
     }
@@ -292,6 +308,7 @@ fn help_page() -> Paragraph<'static> {
 
 fn header_line(app: &App) -> Paragraph<'static> {
     let graph = &app.graph;
+    let glyphs = active().glyphs;
     let count = |state: NodeState| {
         graph
             .nodes
@@ -307,19 +324,19 @@ fn header_line(app: &App) -> Paragraph<'static> {
         (Some(group), Some(tag)) => format!("{group} · tag {tag}"),
     };
     let mut spans = vec![
-        Span::styled(format!(" {}", app.brand), bold(ACCENT)),
+        Span::styled(format!(" {} {}", glyphs.mark, app.brand), bold(Role::Accent)),
         Span::styled("  graph  ", dim()),
-        Span::styled(scope, bold(FG)),
+        Span::styled(scope, bold(Role::Text)),
         Span::styled(format!("   {} · ", counted(agents, "agent")), dim()),
-        Span::styled("●", colour(GREEN)),
+        Span::styled(glyphs.working, role(Role::Working)),
         Span::styled(format!(" {} working · ", count(NodeState::Working)), dim()),
     ];
     let waiting = count(NodeState::NeedsYou);
     if waiting > 0 {
-        spans.push(Span::styled("▲", bold(WARN)));
+        spans.push(Span::styled(glyphs.needs_you, bold(Role::Signal)));
         spans.push(Span::styled(format!(" {waiting} needs you · "), dim()));
     }
-    spans.push(Span::styled("━", colour(INFO)));
+    spans.push(Span::styled("━", role(Role::Info)));
     spans.push(Span::styled(
         format!(
             " {} / {}",
@@ -349,16 +366,16 @@ fn column_labels(app: &App, width: u16) -> Paragraph<'static> {
 }
 
 fn legend_line() -> Paragraph<'static> {
-    let swatch = |glyph: &'static str, color: Color, label: &'static str| {
-        [Span::styled(glyph, bold(color)), Span::styled(label, dim())]
+    let swatch = |glyph: &'static str, target: Role, label: &'static str| {
+        [Span::styled(glyph, bold(target)), Span::styled(label, dim())]
     };
     let mut spans = vec![Span::raw("  ")];
-    spans.extend(swatch("┏┓", ACCENT, " selected   "));
-    spans.extend(swatch("┏┓", GREEN, " working   "));
-    spans.extend(swatch("┏┓", WARN, " needs you   "));
-    spans.extend(swatch("┏┓", BORDER_DIM, " idle   "));
-    spans.extend(swatch("⠉⠒⠤", INFO, " messages   "));
-    spans.extend(swatch("⠁⠂⠄", BORDER_DIM, " lineage only"));
+    spans.extend(swatch("┏┓", Role::Accent, " selected   "));
+    spans.extend(swatch("┏┓", Role::Working, " working   "));
+    spans.extend(swatch("┏┓", Role::Signal, " needs you   "));
+    spans.extend(swatch("┏┓", Role::Rule, " idle   "));
+    spans.extend(swatch("⠉⠒⠤", Role::Info, " messages   "));
+    spans.extend(swatch("⠁⠂⠄", Role::Rule, " lineage only"));
     Paragraph::new(Line::from(spans))
 }
 
@@ -366,13 +383,13 @@ fn legend_line() -> Paragraph<'static> {
 fn detail_line(app: &App) -> Paragraph<'static> {
     let graph = &app.graph;
     let node = &graph.nodes[app.selected];
-    let mut spans = vec![Span::styled(format!("  {}  ", node.name), bold(FG))];
+    let mut spans = vec![Span::styled(format!("  {}  ", node.name), bold(Role::Text))];
     let mut pair = |label: &str, value: String| {
         if spans.len() > 1 {
             spans.push(Span::styled(" · ", dim()));
         }
         spans.push(Span::styled(format!("{label} "), dim()));
-        spans.push(Span::styled(value, colour(FG)));
+        spans.push(Span::styled(value, role(Role::Text)));
     };
     if node.state == NodeState::Operator {
         pair("sent", sent_by(graph, app.selected).to_string());
@@ -414,16 +431,14 @@ fn detail_line(app: &App) -> Paragraph<'static> {
 fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
     let graph = &app.graph;
     let node = &graph.nodes[app.selected];
+    let theme = active();
+    let title = theme
+        .glyphs
+        .inset_title(&cut(&node.name, usize::from(area.width.saturating_sub(6))));
     let block = Block::bordered()
         .border_type(BorderType::Thick)
-        .border_style(bold(ACCENT))
-        .title(Line::styled(
-            format!(
-                " {} ",
-                cut(&node.name, usize::from(area.width.saturating_sub(4)))
-            ),
-            bold(ON_ACCENT).bg(palette(ACCENT)),
-        ));
+        .border_style(bold(Role::Accent))
+        .title(Line::styled(title, theme.on_accent_badge()));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let [
@@ -453,7 +468,7 @@ fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
     let fact = |label: &str, value: String| {
         Line::from(vec![
             Span::styled(format!(" {label:<12}"), dim()),
-            Span::styled(value, colour(FG)),
+            Span::styled(value, role(Role::Text)),
         ])
     };
     let lines = if node.state == NodeState::Operator {
@@ -514,7 +529,7 @@ fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
         }
     }
     frame.render_widget(
-        Sparkline::default().data(&counts).style(colour(INFO)),
+        Sparkline::default().data(&counts).style(role(Role::Info)),
         spark,
     );
 
@@ -527,16 +542,20 @@ fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
         Some((_, Some(ratio))) => frame.render_widget(
             LineGauge::default()
                 .ratio(ratio)
-                .label(Span::styled(format!("{:>3.0}%", ratio * 100.0), colour(FG)))
+                .label(Span::styled(format!("{:>3.0}%", ratio * 100.0), role(Role::Text)))
                 .filled_symbol("━")
                 .unfilled_symbol("─")
-                .filled_style(bold(if ratio > CONTEXT_WARN { WARN } else { GREEN }))
-                .unfilled_style(colour(BORDER_DIM)),
+                .filled_style(bold(if ratio > CONTEXT_WARN {
+                    Role::Signal
+                } else {
+                    Role::Working
+                }))
+                .unfilled_style(role(Role::Rule)),
             gauge,
         ),
         Some((context, None)) => frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(format!("{} tokens", tokens(context.tokens)), colour(FG)),
+                Span::styled(format!("{} tokens", tokens(context.tokens)), role(Role::Text)),
                 Span::styled(" · window unknown", dim()),
             ])),
             gauge,
@@ -555,9 +574,9 @@ fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
         .map(|traffic| {
             Line::from(vec![
                 Span::styled(format!(" {} ", clock::clock_label(traffic.at)), dim()),
-                Span::styled(cut(&graph.nodes[traffic.from].name, width), colour(FG)),
-                Span::styled(" ━▶ ", colour(INFO)),
-                Span::styled(cut(&graph.nodes[traffic.to].name, width), colour(FG)),
+                Span::styled(cut(&graph.nodes[traffic.from].name, width), role(Role::Text)),
+                Span::styled(" ━▸ ", role(Role::Info)),
+                Span::styled(cut(&graph.nodes[traffic.to].name, width), role(Role::Text)),
             ])
         })
         .collect();
@@ -804,6 +823,7 @@ fn draw_edges(app: &App, area: Rect, buffer: &mut Buffer) {
     let graph = &app.graph;
     let boxes = &app.placement.boxes;
     let (paths, arrivals) = routes(app, area);
+    let theme = active();
     let busiest = graph
         .edges
         .iter()
@@ -814,12 +834,12 @@ fn draw_edges(app: &App, area: Rect, buffer: &mut Buffer) {
     let touches = |edge: &Edge| edge.from == app.selected || edge.to == app.selected;
     let edge_colour = |edge: &Edge| {
         if edge.messages() == 0 {
-            BORDER_DIM
+            theme.color(Role::Rule)
         } else if touches(edge) {
-            INFO
+            theme.color(Role::Info)
         } else {
             let strength = 0.35 + 0.65 * f64::from(edge.messages()) / f64::from(busiest);
-            mix(BG_DEEP, INFO, strength * 0.7)
+            mix(theme.color(Role::Surface), theme.color(Role::Info), strength * 0.7)
         }
     };
     // Quiet edges first, the selection's last, so a shared trunk shows its brightest use.
@@ -838,7 +858,7 @@ fn draw_edges(app: &App, area: Rect, buffer: &mut Buffer) {
                 let quiet = edge.messages() == 0;
                 paths[*index].draw(
                     context,
-                    palette(edge_colour(edge)),
+                    edge_colour(edge).unwrap_or(Color::Reset),
                     quiet,
                     touches(edge) && !quiet,
                 );
@@ -848,7 +868,7 @@ fn draw_edges(app: &App, area: Rect, buffer: &mut Buffer) {
                     let rect = boxes[index];
                     let end = point(area, f64::from(rect.x) - 2.0, anchor_row(rect));
                     let start = (end.0 - STUB_LENGTH, end.1);
-                    Path::new(vec![start, end]).draw(context, palette(BORDER_DIM), true, false);
+                    Path::new(vec![start, end]).draw(context, color_of(Role::Rule), true, false);
                     context.print(start.0, start.1 + 1.0, Line::styled("parent ended", dim()));
                 }
             }
@@ -895,7 +915,7 @@ fn draw_edges(app: &App, area: Rect, buffer: &mut Buffer) {
 }
 
 /// An edge's count badge and arrowheads. Across columns they sit at the target end, on the
-/// target's row (`◀ 7 ▶`: messages both ways), so badges of a fan never stack; within one
+/// target's row (`◂ 7 ▸`: messages both ways), so badges of a fan never stack; within one
 /// column the badge sits on the arc's bulge.
 fn draw_ends(
     context: &mut Context,
@@ -904,12 +924,19 @@ fn draw_ends(
     badge_shift: f64,
     boxes: &[Rect],
     selected: bool,
-    edge_colour: Color,
+    edge_colour: Option<Color>,
 ) {
+    let theme = active();
     let badge_style = if selected {
-        bold(ON_ACCENT).bg(palette(INFO))
+        match theme.color(Role::Info) {
+            Some(bg) => bold(Role::OnAccent).bg(bg),
+            None => Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED),
+        }
     } else {
-        bold(INFO).bg(palette(BG_DEEP))
+        match theme.color(Role::Surface) {
+            Some(bg) => bold(Role::Info).bg(bg),
+            None => bold(Role::Info),
+        }
     };
     let badge = format!(" {} ", edge.messages());
     if boxes[edge.from].x == boxes[edge.to].x {
@@ -919,12 +946,16 @@ fn draw_ends(
         }
         return;
     }
-    let arrow = colour(if selected { INFO } else { edge_colour });
+    let arrow = if selected {
+        role(Role::Info)
+    } else {
+        style_of_color(edge_colour)
+    };
     let (end_x, end_y) = path.at(1.0);
     let head = match (edge.forward, edge.backward) {
-        (0, 0) => "▷",
-        (0, _) => "◀",
-        _ => "▶",
+        (0, 0) => "▹",
+        (0, _) => "◂",
+        _ => "▸",
     };
     context.print(end_x + 1.0, end_y, Line::styled(head, arrow));
     if edge.messages() == 0 {
@@ -933,16 +964,23 @@ fn draw_ends(
     let badge_x = end_x + 1.0 - badge.chars().count() as f64 - badge_shift;
     context.print(badge_x, end_y, Line::styled(badge, badge_style));
     if edge.forward > 0 && edge.backward > 0 {
-        context.print(badge_x - 1.0, end_y, Line::styled("◀", arrow));
+        context.print(badge_x - 1.0, end_y, Line::styled("◂", arrow));
     }
 }
 
-/// A message `progress` (0..1) of the way along `path`, backwards when `reverse`: an FG head
-/// and a trail fading from INFO into the edge's colour.
-fn draw_pulse(context: &mut Context, path: &Path, progress: f64, reverse: bool, edge: Color) {
+/// A message `progress` (0..1) of the way along `path`, backwards when `reverse`: a Text head
+/// and a trail fading from Info into the edge's colour.
+fn draw_pulse(
+    context: &mut Context,
+    path: &Path,
+    progress: f64,
+    reverse: bool,
+    edge: Option<Color>,
+) {
     if !(0.0..=1.0).contains(&progress) {
         return;
     }
+    let theme = active();
     // The trail keeps its length in cells, whatever the path's length.
     let step = PULSE_TRAIL_STEP * CURVE_REFERENCE_LENGTH / path.length().max(1.0);
     for trail in 0..PULSE_TRAIL {
@@ -952,48 +990,53 @@ fn draw_pulse(context: &mut Context, path: &Path, progress: f64, reverse: bool, 
         }
         let (x, y) = path.at(if reverse { 1.0 - along } else { along });
         let shade = if trail == 0 {
-            FG
+            theme.color(Role::Text)
         } else {
-            mix(INFO, edge, f64::from(trail) / f64::from(PULSE_TRAIL))
+            mix(theme.color(Role::Info), edge, f64::from(trail) / f64::from(PULSE_TRAIL))
         };
         context.draw(&Points {
             coords: &[(x, y), (x, y + 0.25), (x + 0.5, y)],
-            color: palette(shade),
+            color: shade.unwrap_or(Color::Reset),
         });
     }
 }
 
 fn title_style(node: &Node, selected: bool) -> Style {
     if selected {
-        bold(ON_ACCENT).bg(palette(ACCENT))
+        active().on_accent_badge()
     } else if quiet(node) || node.connector {
         dim()
     } else {
-        bold(FG)
+        bold(Role::Text)
     }
 }
 
 fn draw_node(app: &App, index: usize, rect: Rect, selected: bool, buffer: &mut Buffer) {
     let node = &app.graph.nodes[index];
     let state = node.state;
-    let border = match state {
-        _ if selected => ACCENT,
-        NodeState::Working => breathing(app.clock),
-        NodeState::Starting | NodeState::NeedsYou => WARN,
-        NodeState::Operator => FG,
-        NodeState::Idle | NodeState::Ended => BORDER_DIM,
+    let theme = active();
+    let border_style = if selected {
+        bold(Role::Accent)
+    } else {
+        match state {
+            NodeState::Working => style_of_color(breathing(app.clock)).add_modifier(Modifier::BOLD),
+            NodeState::NeedsYou => bold(Role::Signal),
+            NodeState::Operator => bold(Role::Text),
+            NodeState::Starting | NodeState::Idle | NodeState::Ended => role(Role::Rule),
+        }
     };
     let name_style = title_style(node, selected);
     let glyph_style = if selected {
         name_style
     } else {
-        bold(state_colour(state))
+        bold(state_role(state))
     };
-    let room = usize::from(rect.width.saturating_sub(6));
+    let room = usize::from(rect.width.saturating_sub(8));
     let title = Line::from(vec![
-        Span::styled(" ", name_style),
+        Span::styled(format!("{} ", theme.glyphs.inset_left), border_style),
         Span::styled(glyph(state, app.clock), glyph_style),
         Span::styled(format!(" {} ", cut(&node.name, room)), name_style),
+        Span::styled(theme.glyphs.inset_right, border_style),
     ]);
     let block = Block::bordered()
         .border_type(if state == NodeState::Operator {
@@ -1001,7 +1044,7 @@ fn draw_node(app: &App, index: usize, rect: Rect, selected: bool, buffer: &mut B
         } else {
             BorderType::Thick
         })
-        .border_style(bold(border))
+        .border_style(border_style)
         .title(title);
     let inner = block.inner(rect).inner(Margin::new(1, 0));
     Clear.render(rect, buffer);
@@ -1011,7 +1054,7 @@ fn draw_node(app: &App, index: usize, rect: Rect, selected: bool, buffer: &mut B
     if state == NodeState::Operator {
         let sent = sent_by(&app.graph, index);
         Paragraph::new(Line::from(vec![
-            Span::styled(sent.to_string(), colour(FG)),
+            Span::styled(sent.to_string(), role(Role::Text)),
             Span::styled(" sent", dim()),
         ]))
         .render(status_area, buffer);
@@ -1019,7 +1062,7 @@ fn draw_node(app: &App, index: usize, rect: Rect, selected: bool, buffer: &mut B
     }
     let since = node.last_activity.unwrap_or(node.created_at);
     let status = Line::from(vec![
-        Span::styled(state.word(), colour(state_colour(state))),
+        Span::styled(state.word(), role(state_role(state))),
         Span::styled(format!(" · {}", age(app.graph.now - since)), dim()),
     ]);
     Paragraph::new(status).render(status_area, buffer);
@@ -1028,18 +1071,18 @@ fn draw_node(app: &App, index: usize, rect: Rect, selected: bool, buffer: &mut B
     };
     match context.ratio() {
         Some(ratio) => {
-            let filled = if ratio > CONTEXT_WARN {
-                WARN
+            let filled_style = if ratio > CONTEXT_WARN {
+                role(Role::Signal)
             } else {
-                mix(INFO, ACCENT, 0.5)
+                style_of_color(mix(theme.color(Role::Info), theme.color(Role::Accent), 0.5))
             };
             LineGauge::default()
                 .ratio(ratio)
                 .label(Span::styled("ctx", dim()))
                 .filled_symbol("━")
                 .unfilled_symbol("─")
-                .filled_style(colour(filled))
-                .unfilled_style(colour(BORDER_DIM))
+                .filled_style(filled_style)
+                .unfilled_style(role(Role::Rule))
                 .render(context_area, buffer);
         }
         None => Paragraph::new(Line::styled(
@@ -1056,7 +1099,7 @@ fn draw_compact_node(node: &Node, clock: f64, rect: Rect, selected: bool, buffer
     let glyph_style = if selected {
         name_style
     } else {
-        bold(state_colour(node.state))
+        bold(state_role(node.state))
     };
     let room = usize::from(rect.width.saturating_sub(3));
     Clear.render(rect, buffer);

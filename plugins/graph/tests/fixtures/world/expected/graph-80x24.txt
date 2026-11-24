@@ -1,17 +1,17 @@
- tx-ide  graph  all agents   11 agents · ● 4 working · ▲ 1 needs you · ━ 26 mess
+ ╋╳ tx-ide  graph  all agents   11 agents · ● 4 working · ▲ 1 needs you · ━ 26 m
 
   depth 0              1                    2                    3
   ◇ you       ⠉⠙⡷⡪⢖⡄
                 ⠘⡵ 3
-  ○ old-lead  ⠉⠁⠉⠙⣵⢹⠏ ▷○ legacy-w…
+  × old-lead  ⠉⠁⠉⠙⣵⢹⠏ ▹○ legacy-w…
                 ⣀⣀⡵⡻⣀⡀
-  ● tx-assis… 4 ⡟⠓⠒ 1 ▶○ pv-orche… ⠒⠒⡖◀ 12 ▶● pv-pr4    ⠐⠒⠒⠒⠦⡔⠒ ▷◐ qa-pr4
+  ● tx-assis… 4 ⡟⠓⠒ 1 ▸○ pv-orche… ⠒⠒⡖◂ 12 ▸● pv-pr4    ⠐⠒⠒⠒⠦⡔⠒ ▹▖ qa-pr4
                 ⡇                    ⡇                       2
-                ⠑⠒⠒ 1 ◀● openbot-…   ⠑⠒⠒ 3 ▶● pv-pr5    ⠐⠒⠒⠊⠉
+                ⠑⠒⠒ 1 ◂● openbot-…   ⠑⠒⠒ 3 ▸● pv-pr5    ⠐⠒⠒⠊⠉
                                      ⡄
-                                     ⠓⠂⠐⠒⠂ ▷▲ pv-pr6
+                                     ⠓⠂⠐⠒⠂ ▹▲ pv-pr6
 
-  ○ finished
+  × finished
          parent ended
          ⠤⠄⠠⠤⠄⠠⠤⠄⠠⠤⠄⠠⠄ ○ stray
 

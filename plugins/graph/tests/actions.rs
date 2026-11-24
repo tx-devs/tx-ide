@@ -62,7 +62,7 @@ fn send_prompts_then_sends_the_line_as_typed() {
             .lines()
             .last()
             .unwrap()
-            .contains("send to pv-pr4 ▸ hello q▏"),
+            .contains("send to pv-pr4 › hello q▏"),
         "{frame}"
     );
     key(&mut app, KeyCode::Enter);

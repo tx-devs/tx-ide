@@ -692,7 +692,6 @@ impl Theme {
                 rgb: Some((50, 184, 172)),
                 ansi256: Some(73),
                 ansi16: Ansi16::Cyan,
-                reverse_on_no_color: true,
                 ..RoleSpec::default_role()
             },
             on_accent: RoleSpec::with_rgb((14, 19, 22), 233, Ansi16::Black, false, false),
@@ -757,7 +756,6 @@ impl Theme {
                 rgb: Some((13, 122, 114)),
                 ansi256: Some(30),
                 ansi16: Ansi16::Cyan,
-                reverse_on_no_color: true,
                 ..RoleSpec::default_role()
             },
             on_accent: RoleSpec::with_rgb((247, 250, 250), 231, Ansi16::White, false, false),
@@ -818,7 +816,6 @@ impl Theme {
             accent: RoleSpec {
                 ansi16: Ansi16::Cyan,
                 bold: true,
-                reverse_on_no_color: true,
                 ..RoleSpec::default_role()
             },
             on_accent: RoleSpec::default_role(),
@@ -871,7 +868,6 @@ impl Theme {
                 rgb: Some((122, 162, 247)),
                 ansi256: Some(111),
                 ansi16: Ansi16::Blue,
-                reverse_on_no_color: true,
                 ..RoleSpec::default_role()
             },
             on_accent: RoleSpec::with_rgb((26, 27, 38), 234, Ansi16::Black, false, false),

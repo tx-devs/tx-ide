@@ -195,7 +195,7 @@ fn a_wide_fan_shares_a_bus_and_keeps_each_badge_on_its_row() {
             let arrival = if compact { row } else { row + 1 };
             let line = text.lines().nth(arrival).unwrap();
             assert!(
-                line.contains(&format!(" {number} ▶")),
+                line.contains(&format!(" {number} ▸")),
                 "{columns} columns, {name}: {line:?}\n{text}"
             );
         }
@@ -230,7 +230,7 @@ fn the_header_counts_in_the_singular_and_wears_the_brand() {
     app.brand = "tx-qa".to_owned();
     let text = run::snapshot(&mut app, 120, 20);
     let header = text.lines().next().unwrap();
-    assert!(header.starts_with(" tx-qa  graph"), "{header}");
+    assert!(header.starts_with(" ╋╳ tx-qa  graph"), "{header}");
     assert!(header.contains(" 1 agent · "), "{header}");
     assert!(header.contains(" 1 message / 1h"), "{header}");
 }

@@ -5,13 +5,13 @@ use std::time::Duration;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Widget};
 use tx_client::render::reltime;
 use tx_core::LlmEngineState;
 
-use tx_client::palette::{ACCENT, DIM_FG, FG, GREEN, ON_ACCENT, RED, WARN, palette};
+use tx_client::theme::{Role, active};
 
 use crate::backdrop::{Backdrop, is_text, layout};
 use crate::model::{AgentRow, AssistantState, Context, Detail, Home, Row, View};
@@ -20,16 +20,15 @@ use crate::model::{AgentRow, AssistantState, Context, Detail, Home, Row, View};
 pub const FPS: u64 = 4;
 
 const NAME_W: usize = 24;
-const SPINNER: [char; 4] = ['◐', '◓', '◑', '◒'];
 const DAY: f64 = 86_400.0;
 const DETAIL_INDENT: &str = "      ";
 
-fn fg(color: Color) -> Style {
-    Style::new().fg(palette(color))
+fn role(role: Role) -> Style {
+    active().style(role)
 }
 
 fn dim() -> Style {
-    fg(DIM_FG).add_modifier(Modifier::DIM)
+    role(Role::Muted)
 }
 
 /// Writes `line` at row `y` when the row is inside `area`.
@@ -93,11 +92,7 @@ pub fn draw_frame(
 }
 
 fn selected(themed: bool) -> Style {
-    if themed {
-        Style::new().bg(palette(ACCENT)).fg(palette(ON_ACCENT))
-    } else {
-        Style::new().add_modifier(Modifier::REVERSED)
-    }
+    active().selection_style(themed)
 }
 
 fn draw_main(home: &Home, frame: usize, area: Rect, buf: &mut Buffer, themed: bool) {
@@ -162,22 +157,34 @@ fn header_line(home: &Home, width: usize) -> Line<'static> {
                 && context.now - agent.age_at <= DAY
         })
         .count();
+    let theme = active();
+    let glyphs = theme.glyphs;
     let counts = format!("  {running} running · {ended_today} ended today · assistant ");
     let (state, style) = match &context.assistant {
-        AssistantState::Absent => ("○ none".to_owned(), dim()),
-        AssistantState::Creating => ("◐ starting · creating".to_owned(), fg(WARN)),
-        AssistantState::Starting => ("◐ starting · claude".to_owned(), fg(WARN)),
-        AssistantState::Ready => ("● ready".to_owned(), fg(GREEN)),
-        AssistantState::Stopped { .. } => ("○ stopped · r restart".to_owned(), dim()),
+        AssistantState::Absent => (format!("{} none", glyphs.idle), dim()),
+        AssistantState::Creating => (
+            format!("{} starting · creating", glyphs.starting[0]),
+            role(Role::Signal),
+        ),
+        AssistantState::Starting => (
+            format!("{} starting · claude", glyphs.starting[0]),
+            role(Role::Signal),
+        ),
+        AssistantState::Ready => (format!("{} ready", glyphs.working), role(Role::Working)),
+        AssistantState::Stopped { .. } => {
+            (format!("{} stopped · r restart", glyphs.idle), dim())
+        }
         AssistantState::Failed(reason) => {
-            let prefix = "✗ failed: ";
-            let used = "tx-ide".len() + counts.chars().count() + prefix.chars().count();
+            let prefix = format!("{} failed: ", glyphs.failed);
+            let used = glyphs.mark.chars().count()
+                + counts.chars().count()
+                + prefix.chars().count();
             let reason = truncate(reason, width.saturating_sub(used));
-            (format!("{prefix}{reason}"), fg(RED))
+            (format!("{prefix}{reason}"), role(Role::Failed))
         }
     };
     Line::from(vec![
-        Span::styled("tx-ide", fg(ACCENT).add_modifier(Modifier::BOLD)),
+        Span::styled(glyphs.mark, theme.bold(Role::Accent)),
         Span::styled(counts, dim()),
         Span::styled(state, style),
     ])
@@ -186,7 +193,7 @@ fn header_line(home: &Home, width: usize) -> Line<'static> {
 fn row_lines(row: &Row<'_>, context: &Context, frame: usize) -> Vec<Line<'static>> {
     match row {
         Row::Project(project) => vec![Line::from(vec![
-            Span::styled(project.name.clone(), fg(FG).add_modifier(Modifier::BOLD)),
+            Span::styled(project.name.clone(), active().bold(Role::Text)),
             Span::styled(format!("  {}", project.path.display()), dim()),
         ])],
         Row::Agent(agent) => vec![agent_line(agent, context.now, frame)],
@@ -205,23 +212,28 @@ fn row_lines(row: &Row<'_>, context: &Context, frame: usize) -> Vec<Line<'static
 }
 
 fn agent_line(agent: &AgentRow, now: f64, frame: usize) -> Line<'static> {
+    let glyphs = active().glyphs;
     let (glyph, word, glyph_style) = match agent.state {
-        LlmEngineState::Working => ('●', "working", fg(GREEN)),
-        LlmEngineState::Starting => (SPINNER[frame % SPINNER.len()], "starting", fg(WARN)),
-        LlmEngineState::Idle if agent.waiting => ('▲', "needs you", fg(WARN)),
-        LlmEngineState::Idle => ('○', "idle", dim()),
-        LlmEngineState::Ended => ('○', "ended", dim()),
+        LlmEngineState::Working => (glyphs.working, "working", role(Role::Working)),
+        LlmEngineState::Starting => (
+            glyphs.starting[frame % glyphs.starting.len()],
+            "starting",
+            role(Role::Muted),
+        ),
+        LlmEngineState::Idle if agent.waiting => (glyphs.needs_you, "needs you", role(Role::Signal)),
+        LlmEngineState::Idle => (glyphs.idle, "idle", dim()),
+        LlmEngineState::Ended => (glyphs.ended, "ended", dim()),
     };
     let body = if agent.state == LlmEngineState::Ended {
         dim()
     } else {
-        fg(FG)
+        role(Role::Text)
     };
     let age = reltime(Some(agent.age_at), now);
     let name = truncate(&agent.name, NAME_W);
     let mut spans = vec![
         Span::styled("  ", body),
-        Span::styled(glyph.to_string(), glyph_style),
+        Span::styled(glyph, glyph_style),
         Span::styled(format!(" {name:<NAME_W$} {word:<9}{age:>5}"), body),
     ];
     if let Some(branch) = &agent.branch {
@@ -234,7 +246,7 @@ fn agent_line(agent: &AgentRow, now: f64, frame: usize) -> Line<'static> {
 fn labelled(label: &str, value: String) -> Vec<Span<'static>> {
     vec![
         Span::styled(format!("{label} "), dim()),
-        Span::styled(value, fg(FG)),
+        Span::styled(value, role(Role::Text)),
     ]
 }
 
@@ -269,7 +281,7 @@ fn detail_lines(agent: &AgentRow, detail: Option<&Detail>, now: f64) -> Vec<Line
         (None, None) => None,
     };
     if let Some(engine) = engine {
-        facts.push(vec![Span::styled(engine, fg(FG))]);
+        facts.push(vec![Span::styled(engine, role(Role::Text))]);
     }
     if let Some(parent) = &detail.parent_name {
         facts.push(labelled("parent", parent.clone()));
@@ -322,7 +334,7 @@ fn first_run_lines() -> Vec<Line<'static>> {
     let verb = |key: &str, name: &str, explanation: &str| {
         Line::from(vec![
             Span::raw("  "),
-            Span::styled(key.to_owned(), fg(WARN)),
+            Span::styled(key.to_owned(), role(Role::Signal)),
             Span::raw(format!("  {name:<15}")),
             Span::styled(explanation.to_owned(), dim()),
         ])
@@ -374,9 +386,10 @@ fn draw_list(list: &List<'_>, area: Rect, buf: &mut Buffer, themed: bool) {
         hint,
     } = list;
     let (row, highlight) = (*row, *highlight);
+    let theme = active();
     let block = Block::bordered()
-        .title(format!(" {title} "))
-        .border_style(fg(ACCENT));
+        .title(theme.glyphs.inset_title(title))
+        .border_style(role(Role::Accent));
     let inner = block.inner(area);
     block.render(area, buf);
     if inner.height < 2 {
@@ -432,14 +445,14 @@ fn draw_plugins(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: b
         .context
         .plugins
         .iter()
-        .map(|(id, active)| {
-            let (status, style) = if *active {
-                ("active", fg(ACCENT))
+        .map(|(id, active_flag)| {
+            let (status, style) = if *active_flag {
+                ("active", role(Role::Accent))
             } else {
                 ("disabled", dim())
             };
             Line::from(vec![
-                Span::styled(format!("{id:<idw$}  "), fg(FG)),
+                Span::styled(format!("{id:<idw$}  "), role(Role::Text)),
                 Span::styled(status, style),
             ])
         })
@@ -477,9 +490,9 @@ fn draw_keys(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: bool
         .zip(&keys)
         .map(|(hint, keys)| {
             Line::from(vec![
-                Span::styled(format!("{keys:<keyw$}  "), fg(ACCENT)),
-                Span::styled(format!("{:<idw$}  ", hint.plugin), fg(WARN)),
-                Span::styled(hint.text.clone(), fg(FG)),
+                Span::styled(format!("{keys:<keyw$}  "), role(Role::Accent)),
+                Span::styled(format!("{:<idw$}  ", hint.plugin), role(Role::Signal)),
+                Span::styled(hint.text.clone(), role(Role::Text)),
             ])
         })
         .collect();
@@ -504,7 +517,7 @@ fn draw_layouts(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: b
     } else {
         let rows = names
             .iter()
-            .map(|name| Line::styled(name.clone(), fg(FG)))
+            .map(|name| Line::styled(name.clone(), role(Role::Text)))
             .collect();
         (rows, true)
     };
@@ -523,6 +536,7 @@ fn draw_layouts(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: b
 #[cfg(test)]
 mod tests {
     use ratatui::crossterm::event::{KeyCode, MouseEvent};
+    use ratatui::style::Modifier;
     use std::collections::BTreeMap;
 
     use super::*;
@@ -596,19 +610,19 @@ mod tests {
         let lines = text(&render(&home));
         assert_eq!(
             lines[0],
-            "tx-ide  2 running · 1 ended today · assistant ● ready"
+            "╋╳  2 running · 1 ended today · assistant ● ready"
         );
         for (state, tail) in [
             (AssistantState::Absent, "assistant ○ none"),
-            (AssistantState::Creating, "assistant ◐ starting · creating"),
-            (AssistantState::Starting, "assistant ◐ starting · claude"),
+            (AssistantState::Creating, "assistant ▖ starting · creating"),
+            (AssistantState::Starting, "assistant ▖ starting · claude"),
             (
                 AssistantState::Stopped { id: "s1".into() },
                 "assistant ○ stopped · r restart",
             ),
             (
                 AssistantState::Failed("no claude".into()),
-                "assistant ✗ failed: no claude",
+                "assistant × failed: no claude",
             ),
         ] {
             home.context.assistant = state;
@@ -627,7 +641,7 @@ mod tests {
         let lines = text(&buf);
         assert_eq!(lines[1], "  loading…");
         assert!(lines[2..usize::from(H) - 1].iter().all(String::is_empty));
-        assert_eq!(buf[(2, 1)].fg, dim().fg.unwrap());
+        assert!(buf[(2, 1)].modifier.contains(Modifier::DIM));
     }
 
     #[test]
@@ -656,7 +670,10 @@ mod tests {
             "{}",
             lines[row]
         );
-        assert_eq!(buf[(2, u16::try_from(row).unwrap())].fg, WARN);
+        assert_eq!(
+            buf[(2, u16::try_from(row).unwrap())].fg,
+            active().color(Role::Signal).unwrap_or(Color::Reset)
+        );
     }
 
     #[test]
@@ -672,9 +689,9 @@ mod tests {
             "{}",
             lines[row_of(&lines, "startup-ux")]
         );
-        assert!(lines[row_of(&lines, "docs-site")].starts_with("  ○ docs-site"));
+        assert!(lines[row_of(&lines, "docs-site")].starts_with("  × docs-site"));
         assert!(lines[row_of(&lines, "docs-site")].contains("ended       8m"));
-        for (frame, glyph) in [(0, "◐"), (1, "◓"), (2, "◑"), (3, "◒"), (4, "◐")] {
+        for (frame, glyph) in [(0, "▖"), (1, "▘"), (2, "▝"), (3, "▗"), (4, "▖")] {
             let lines = text(&render_sized(&home, frame, W, H));
             assert!(
                 lines[row_of(&lines, "late")].starts_with(&format!("  {glyph} late")),
@@ -752,14 +769,20 @@ mod tests {
     }
 
     #[test]
-    fn the_cursor_row_is_reversed() {
+    fn the_cursor_row_is_highlighted() {
         let home = Home::new(context());
         let buf = render(&home);
         let lines = text(&buf);
         let cursor = u16::try_from(row_of(&lines, "fixer   ")).unwrap();
         let other = u16::try_from(row_of(&lines, "startup-ux")).unwrap();
-        assert!((0..W).all(|x| buf[(x, cursor)].modifier.contains(Modifier::REVERSED)));
-        assert!((0..W).all(|x| !buf[(x, other)].modifier.contains(Modifier::REVERSED)));
+        let expected = super::selected(false);
+        if let Some(bg) = expected.bg {
+            assert!((0..W).all(|x| buf[(x, cursor)].bg == bg));
+            assert!((0..W).all(|x| buf[(x, other)].bg != bg));
+        } else {
+            assert!((0..W).all(|x| buf[(x, cursor)].modifier.contains(Modifier::REVERSED)));
+            assert!((0..W).all(|x| !buf[(x, other)].modifier.contains(Modifier::REVERSED)));
+        }
     }
 
     #[test]
@@ -769,12 +792,16 @@ mod tests {
         let mut buf = Buffer::empty(area);
         draw(&home, 0, area, &mut buf, true);
         let cursor = u16::try_from(row_of(&text(&buf), "fixer   ")).unwrap();
-        assert!((0..W).all(|x| buf[(x, cursor)].bg == palette(ACCENT)));
-        assert!(
-            buf.content
-                .iter()
-                .all(|cell| !cell.modifier.contains(Modifier::REVERSED))
-        );
+        if let Some(accent) = active().color(Role::Accent) {
+            assert!((0..W).all(|x| buf[(x, cursor)].bg == accent));
+            assert!(
+                buf.content
+                    .iter()
+                    .all(|cell| !cell.modifier.contains(Modifier::REVERSED))
+            );
+        } else {
+            assert!((0..W).all(|x| buf[(x, cursor)].modifier.contains(Modifier::REVERSED)));
+        }
     }
 
     struct Fill {
@@ -820,12 +847,14 @@ mod tests {
         let mut fill = Fill { logo: (10, 3) };
         draw_frame(&home, 0, Some(&mut fill), Duration::ZERO, area, &mut buf);
         assert!((35..45).all(|x| buf[(x, 0)].symbol() == "L"));
-        assert!(text(&buf)[4].starts_with("tx-ide"));
+        assert!(text(&buf)[4].starts_with("╋╳"));
         assert_eq!(buf[(0, 4)].bg, Color::Rgb(1, 2, 3));
         // The blank between two words is not text: the backdrop shows there.
-        assert_eq!(buf[(6, 4)].symbol(), "w");
+        assert_eq!(buf[(2, 4)].symbol(), "w");
         let cursor = u16::try_from(row_of(&text(&buf), "fixer   ")).unwrap();
-        assert!((0..W).all(|x| buf[(x, cursor)].bg == palette(ACCENT)));
+        if let Some(accent) = active().color(Role::Accent) {
+            assert!((0..W).all(|x| buf[(x, cursor)].bg == accent));
+        }
     }
 
     #[test]
@@ -894,10 +923,13 @@ mod tests {
         starting.context.assistant = AssistantState::Starting;
         assert_eq!(
             text(&render(&starting))[0],
-            "tx-ide  0 running · 0 ended today · assistant ◐ starting · claude"
+            "╋╳  0 running · 0 ended today · assistant ▖ starting · claude"
         );
         let key_cell = &buf[(2, u16::try_from(intro + 2).unwrap())];
-        assert_eq!(key_cell.fg, WARN);
+        assert_eq!(
+            key_cell.fg,
+            active().color(Role::Signal).unwrap_or(Color::Reset)
+        );
         assert_eq!(
             lines.last().unwrap(),
             "enter attach · n new · / ask · L tour · ? keys"
@@ -927,13 +959,17 @@ mod tests {
         };
         let buf = render_sized(&home, 0, W, 10);
         let lines = text(&buf);
-        assert!(lines[0].starts_with("tx-ide"));
-        let reversed: Vec<usize> = (0..10)
-            .filter(|&y| buf[(0, y)].modifier.contains(Modifier::REVERSED))
+        assert!(lines[0].starts_with("╋╳"));
+        let expected = super::selected(false);
+        let highlighted: Vec<usize> = (0..10)
+            .filter(|&y| match expected.bg {
+                Some(bg) => buf[(0, y)].bg == bg,
+                None => buf[(0, y)].modifier.contains(Modifier::REVERSED),
+            })
             .map(usize::from)
             .collect();
-        assert_eq!(reversed.len(), 1, "{lines:?}");
-        assert!(lines[reversed[0]].contains(&selected.name), "{lines:?}");
+        assert_eq!(highlighted.len(), 1, "{lines:?}");
+        assert!(lines[highlighted[0]].contains(&selected.name), "{lines:?}");
         assert!(lines[1..9].iter().all(|line| !line.contains("wrangler  ")));
     }
 
@@ -970,7 +1006,12 @@ mod tests {
         let buf = render_sized(&home, 0, 60, 5);
         let lines = text(&buf);
         assert!(lines[1].contains(&selected.name), "{lines:?}");
-        assert!(buf[(0, 1)].modifier.contains(Modifier::REVERSED));
+        let expected = super::selected(false);
+        let highlighted = match expected.bg {
+            Some(bg) => buf[(0, 1)].bg == bg,
+            None => buf[(0, 1)].modifier.contains(Modifier::REVERSED),
+        };
+        assert!(highlighted);
     }
 
     #[test]
@@ -1027,9 +1068,14 @@ mod tests {
         assert!(lines[0].contains(" layouts "), "{}", lines[0]);
         let pair = u16::try_from(row_of(&lines, "│pair ")).unwrap();
         let solo = u16::try_from(row_of(&lines, "│solo ")).unwrap();
-        let reversed =
-            |y: u16| (1..W - 1).all(|x| buf[(x, y)].modifier.contains(Modifier::REVERSED));
-        assert!(reversed(solo) && !reversed(pair));
+        let expected = super::selected(false);
+        let highlighted = |y: u16| {
+            (1..W - 1).all(|x| match expected.bg {
+                Some(bg) => buf[(x, y)].bg == bg,
+                None => buf[(x, y)].modifier.contains(Modifier::REVERSED),
+            })
+        };
+        assert!(highlighted(solo) && !highlighted(pair));
         row_of(&lines, "enter open here");
     }
 
