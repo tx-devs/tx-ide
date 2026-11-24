@@ -18,3 +18,9 @@ worktree:
   # and a respawned agent rebuilds them. Relative to the worktree; no `..`, nothing git tracks.
   # A Node project would add node_modules and dist.
   build_outputs: [target]
+
+# Visual identity and colour theme (`tx update` reapplies tmux options).
+theme:
+  name: auto                   # auto | tx-dark | tx-light | terminal | tokyo-night | <themes/name>
+  status_style: rule           # rule | bar
+  glyphs: unicode              # unicode | ascii

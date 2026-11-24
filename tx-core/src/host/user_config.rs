@@ -39,7 +39,97 @@ pub struct Config {
     #[serde(default)]
     pub worktree: WorktreeSettings,
     #[serde(default)]
+    pub theme: ThemeSettings,
+    #[serde(default)]
     pub plugins: BTreeMap<String, Entry>,
+}
+
+/// How the tmux status line is drawn: a backgroundless heavy rule (`rule`, default) or a filled
+/// traditional bar (`bar`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StatusStyle {
+    #[default]
+    Rule,
+    Bar,
+}
+
+/// Which glyph tier tx draws its mark, states and motion with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GlyphTier {
+    #[default]
+    Unicode,
+    Ascii,
+}
+
+/// The `theme:` section of `config.yaml`: either a theme name (`theme: tokyo-night`) or a
+/// mapping with `name`, `status_style`, `glyphs` and per-role colour overrides.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThemeSettings {
+    /// `auto` (detect dark/light via tmux, falling back to `terminal`), a shipped preset
+    /// (`tx-dark`, `tx-light`, `terminal`, `tokyo-night`), or a file name under `<config>/themes/`.
+    pub name: String,
+    pub status_style: StatusStyle,
+    pub glyphs: GlyphTier,
+    /// Per-role colour overrides (`signal`, `accent`, `working`, `failed`, `info`, `text`,
+    /// `muted`, `rule`, `rule_active`, `surface`, `selection`, `on_accent`).
+    pub colors: BTreeMap<String, String>,
+}
+
+impl Default for ThemeSettings {
+    fn default() -> Self {
+        Self {
+            name: default_theme_name(),
+            status_style: StatusStyle::default(),
+            glyphs: GlyphTier::default(),
+            colors: BTreeMap::new(),
+        }
+    }
+}
+
+fn default_theme_name() -> String {
+    "auto".to_owned()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThemeTable {
+    #[serde(default = "default_theme_name")]
+    name: String,
+    #[serde(default)]
+    status_style: StatusStyle,
+    #[serde(default)]
+    glyphs: GlyphTier,
+    #[serde(default)]
+    colors: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ThemeValue {
+    Name(String),
+    Table(ThemeTable),
+}
+
+impl<'de> Deserialize<'de> for ThemeSettings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match ThemeValue::deserialize(deserializer)? {
+            ThemeValue::Name(name) => Ok(Self {
+                name,
+                ..Self::default()
+            }),
+            ThemeValue::Table(table) => Ok(Self {
+                name: table.name,
+                status_style: table.status_style,
+                glyphs: table.glyphs,
+                colors: table.colors,
+            }),
+        }
+    }
 }
 
 /// The `worktree:` section.
@@ -165,7 +255,31 @@ mod tests {
         let config = load(&path).unwrap();
         assert_eq!(config.agent, AgentDefaults::default());
         assert_eq!(config.worktree, WorktreeSettings::default());
+        assert_eq!(config.theme, ThemeSettings::default());
         assert!(config.plugins.is_empty(), "{:?}", config.plugins);
+    }
+
+    #[test]
+    fn theme_accepts_a_name_or_a_table() {
+        let short = parse_text("theme: tokyo-night\n").unwrap();
+        assert_eq!(short.theme.name, "tokyo-night");
+        assert_eq!(short.theme.status_style, StatusStyle::Rule);
+        assert_eq!(short.theme.glyphs, GlyphTier::Unicode);
+
+        let full = parse_text(
+            "theme:\n  name: tx-dark\n  status_style: bar\n  glyphs: ascii\n  colors:\n    signal: \"#ffb000\"\n",
+        )
+        .unwrap();
+        assert_eq!(full.theme.name, "tx-dark");
+        assert_eq!(full.theme.status_style, StatusStyle::Bar);
+        assert_eq!(full.theme.glyphs, GlyphTier::Ascii);
+        assert_eq!(
+            full.theme.colors.get("signal").map(String::as_str),
+            Some("#ffb000")
+        );
+
+        let error = parse_text("theme:\n  status_style: ribbon\n").unwrap_err();
+        assert!(error.0.starts_with("/c/config.yaml: "), "{error}");
     }
 
     fn parse_text(text: &str) -> Result<Config, UsageError> {
