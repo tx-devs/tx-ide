@@ -276,6 +276,11 @@ impl Verb for Attention {
                 for mark in marks::list(&ui) {
                     marks::clear(&ui, &mark.session);
                 }
+                marks::refresh_bar(&ui);
+                Ok(0)
+            }
+            ["_refresh"] => {
+                marks::refresh_bar(&ui);
                 Ok(0)
             }
             _ => {

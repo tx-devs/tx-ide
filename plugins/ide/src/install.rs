@@ -7,7 +7,8 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
-use tx_client::tmux::{Ui, UiError};
+use tx_client::theme::{ColorDepth, Polarity, Theme};
+use tx_client::tmux::{NVIM_RESOURCE, Ui, UiError, shell_quote};
 use tx_client::views::{self, ViewKind, ViewRequest};
 use tx_core::core::DEFAULT_TMUX_CONF;
 use tx_core::host::bundle::KEYS_INSTALLED;
@@ -15,7 +16,7 @@ use tx_core::host::setup::ROLES_DIR;
 use tx_core::plugin::manifest::RESOURCE_KINDS;
 use tx_core::sdk::TX_BIN_ENV;
 use tx_core::updates::Outcome;
-use tx_core::{TxCore, Updater, Verb, VerbError, VerbIo};
+use tx_core::{CoreConfig, Event, EventSink, EventType, TxCore, Updater, Verb, VerbError, VerbIo};
 
 use crate::view_verb;
 
@@ -64,7 +65,8 @@ fn conf_text(exe: &Path, data: &Path, arguments: &[String], fragments: &[(&str, 
          set -g @tx-data \"{data}\"\n\
          set -g @tx-arguments \"{arguments}\"\n\
          set-environment -g TX_BIN \"{exe}\"\n\
-         source-file \"{data}/conf/tmux.conf\"\n",
+         source-file \"{data}/conf/tmux.conf\"\n\
+         source-file \"{data}/conf/theme.tmux\"\n",
     );
     for (id, fragment) in fragments {
         let interpreter = fragment
@@ -300,6 +302,110 @@ fn published_fragments(data: &Path) -> Result<Vec<(String, String)>, VerbError> 
     Ok(fragments)
 }
 
+/// Detects the active terminal background polarity from any attached tmux client.
+fn detect_server_polarity(ui: &Ui) -> Polarity {
+    let (ok, output) = ui.quiet(&["list-clients", "-F", "#{client_theme}"]);
+    if !ok {
+        return Polarity::Unknown;
+    }
+    for line in output.lines() {
+        let polarity = Polarity::parse(line);
+        if polarity != Polarity::Unknown {
+            return polarity;
+        }
+    }
+    Polarity::Unknown
+}
+
+/// Generates `<data>/conf/theme.tmux` and `<data>/conf/theme.lua` from the active configuration.
+fn write_theme_files(core: &TxCore, polarity: Polarity) -> Result<PathBuf, VerbError> {
+    let depth = ColorDepth::detect();
+    let theme = Theme::for_core(core, polarity, depth);
+    let conf_dir = core.config().directories.data.join("conf");
+    std::fs::create_dir_all(&conf_dir).map_err(io_failed(&conf_dir))?;
+    let tmux_path = conf_dir.join("theme.tmux");
+    let lua_path = conf_dir.join("theme.lua");
+    std::fs::write(&tmux_path, theme.tmux_conf()).map_err(io_failed(&tmux_path))?;
+    std::fs::write(&lua_path, theme.nvim_lua()).map_err(io_failed(&lua_path))?;
+    Ok(tmux_path)
+}
+
+/// `_theme-apply [dark|light]`: regenerates `<data>/conf/theme.tmux` and `theme.lua`, and sources
+/// `theme.tmux` on the running server (invoked by `client-dark-theme` / `client-light-theme`).
+pub struct ThemeApplyVerb;
+
+impl Verb for ThemeApplyVerb {
+    fn name(&self) -> &'static str {
+        "_theme-apply"
+    }
+
+    fn usage(&self) -> &'static str {
+        "_theme-apply [dark|light]   regenerate and source theme.tmux and theme.lua (internal)"
+    }
+
+    fn run(&self, core: &TxCore, io: &mut VerbIo<'_>, argv: &[String]) -> Result<i32, VerbError> {
+        let ui = Ui::from_core(core);
+        let polarity = match argv.first().map(String::as_str) {
+            Some("dark") => Polarity::Dark,
+            Some("light") => Polarity::Light,
+            None => detect_server_polarity(&ui),
+            Some(other) => {
+                let _ = writeln!(io.stderr, "usage: tx _theme-apply [dark|light] (got {other})");
+                return Ok(2);
+            }
+        };
+        let tmux_path = write_theme_files(core, polarity)?;
+        if ui.quiet(&["list-sessions"]).0 {
+            ui.run(&["source-file", &tmux_path.to_string_lossy()])
+                .map_err(|error| VerbError::Failed(error.to_string()))?;
+        }
+        Ok(0)
+    }
+}
+
+/// Sweeps a brief travelling pulse across the Junction status rule whenever `tx send` delivers
+/// a message (`EventType::MessageSent`). Non-blocking (`run-shell -b`); no-op without a server.
+pub struct MessagePulseSink {
+    config: CoreConfig,
+}
+
+impl MessagePulseSink {
+    pub fn new(config: CoreConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl EventSink for MessagePulseSink {
+    fn on_event(&self, event: &Event) {
+        if event.type_ != EventType::MessageSent {
+            return;
+        }
+        let socket = self.config.socket_path();
+        if !socket.exists() {
+            return;
+        }
+        let ui = Ui::new(
+            socket.clone(),
+            self.config.tmux_conf_path(),
+            self.config.directories.data.join(NVIM_RESOURCE),
+        );
+        if !ui.quiet(&["list-sessions"]).0 {
+            return;
+        }
+        let quoted_socket = shell_quote(&socket.to_string_lossy());
+        let script = format!(
+            "for frame in '▸' '━▸' '━━▸'; do \
+               tmux -S {quoted_socket} set -g @tx-pulse \"$frame\" >/dev/null 2>&1 || exit 0; \
+               tmux -S {quoted_socket} refresh-client -S >/dev/null 2>&1 || true; \
+               sleep 0.12; \
+             done; \
+             tmux -S {quoted_socket} set -gu @tx-pulse >/dev/null 2>&1 || true; \
+             tmux -S {quoted_socket} refresh-client -S >/dev/null 2>&1 || true"
+        );
+        let _ = ui.run_shell_background(&script);
+    }
+}
+
 /// The `ide` plugin's part of `tx update`: composes the server config from the key fragments
 /// `tx update` published, and reloads a running server. Retired, it gives the config back to
 /// core.
@@ -386,6 +492,14 @@ fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
         .map(|(id, text)| (id.as_str(), text.as_str()))
         .collect();
     let conf = core.config().tmux_conf_path();
+    let ui = Ui::from_core(core);
+    let server_running = ui.quiet(&["list-sessions"]).0;
+    let polarity = if server_running {
+        detect_server_polarity(&ui)
+    } else {
+        Polarity::Unknown
+    };
+    write_theme_files(core, polarity)?;
     std::fs::write(&conf, conf_text(&exe, data, &arguments, &run_order))
         .map_err(io_failed(&conf))?;
     let installed = data.join(KEYS_INSTALLED);
@@ -393,8 +507,7 @@ fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
         || std::fs::write(&installed, render_installed(&fragments)).map_err(io_failed(&installed));
 
     let mut out = format!("{}\n", conf.display());
-    let ui = Ui::from_core(core);
-    if ui.quiet(&["list-sessions"]).0 {
+    if server_running {
         let legacy_conf_loaded = previous.is_none() && {
             let (ok, value) = ui.quiet(&["show-option", "-gv", "@tx-bin"]);
             ok && !value.trim().is_empty()
@@ -588,6 +701,7 @@ mod tests {
              set -g @tx-arguments \"--data-dir /s/data --run-dir /r\"\n\
              set-environment -g TX_BIN \"/opt/tx\"\n\
              source-file \"/s/data/conf/tmux.conf\"\n\
+             source-file \"/s/data/conf/theme.tmux\"\n\
              run-shell \"/usr/bin/env bash /s/data/keys/ide.tmux\"\n\
              run-shell \"/bin/sh /s/data/keys/kill.tmux\"\n\
              run-shell \"/s/data/keys/labels.tmux\"\n"

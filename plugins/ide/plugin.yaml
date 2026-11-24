@@ -21,6 +21,15 @@ verbs:
     usage: "_attach-into <client> <session> <pane>   attach a session into a pane (attach-to's Enter, internal)"
     bin: tx-ide
     args: [_attach-into]
+  - name: _theme-apply
+    usage: "_theme-apply [dark|light]   regenerate and source theme.tmux and theme.lua (internal)"
+    bin: tx-ide
+    args: [_theme-apply]
+
+on-event:
+  events: [message-sent]
+  bin: tx-ide
+  args: [--tx-event]
 
 update:
   bin: tx-ide

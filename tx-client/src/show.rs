@@ -8,7 +8,7 @@
 //! or a click select a pane under a gold active border, Enter runs `tx _attach-into`, Esc / q
 //! leave; any other key stays in it.
 
-use crate::palette::{DIM_FG_HEX, FG_HEX, WARN_HEX};
+use crate::theme::{Role, active};
 use crate::tmux::{Ui, popup_args, shell_quote};
 
 /// The key table attach-to picks a pane in.
@@ -88,7 +88,15 @@ impl Ui {
             }
             None => format!("={outer_session}:"),
         };
-        let border = format!("fg={WARN_HEX},bold");
+        let border = {
+            let (ok, value) = self.quiet(&["show-option", "-gv", "@tx-signal-style"]);
+            let trimmed = value.trim();
+            if ok && !trimmed.is_empty() {
+                trimmed.to_owned()
+            } else {
+                active().tmux_fg_style(Role::Signal)
+            }
+        };
         self.run(&[
             "set-option",
             "-w",
@@ -115,16 +123,15 @@ impl Ui {
             .1
             .trim()
             .to_owned();
-        let footer =
-            format!(" #[fg={FG_HEX}]{prefix} d#[fg={DIM_FG_HEX}] close, the session keeps running");
+        let theme = active();
+        let text = theme.tmux_color(Role::Text);
+        let muted = theme.tmux_color(Role::Muted);
+        let footer = format!(" #[fg={text}]{prefix} d#[fg={muted}] close, the session keeps running");
         let target = format!("={session}:");
         let shown = format!("={session}");
         let options = [
             ("status", "on".to_owned()),
-            (
-                "status-style",
-                format!("bg={},fg={DIM_FG_HEX}", crate::palette::BG_DEEP_HEX),
-            ),
+            ("status-style", format!("bg=default,fg={muted}")),
             ("status-format[0]", footer),
         ];
         for (option, value) in &options {

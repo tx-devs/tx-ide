@@ -8,6 +8,12 @@ use tx_core::{Agent, IdleReason, LlmEngineState};
 
 /// Kept in LOCKSTEP with `keys/attention.tmux`, which reads it in the status line and the hooks.
 pub const MARK_OPTION: &str = "@tx-attention";
+/// Global option rendered into `status-left` (`#{E:@tx-attention-bar}`): at most [`MAX_NAMED`]
+/// named entries plus an overflow counter (`▲ +N` / `○ +N`), styled through `@tx-signal-style`
+/// and `@tx-muted-style` so dark/light switches take effect live.
+pub const BAR_OPTION: &str = "@tx-attention-bar";
+/// Maximum individually named agents in the status line before collapsing into `+N`.
+pub const MAX_NAMED: usize = 2;
 
 const LIST_FORMAT: &str = "#{@tx-id}\t#{session_id}\t#{session_name}\t#{@tx-attention}";
 const CLIENTS_FORMAT: &str = "#{client_tty}\t#{session_id}\t#{client_flags}";
@@ -156,13 +162,53 @@ pub fn read(ui: &Ui, session: &str) -> Option<Need> {
     parse_mark(&value).map(|(need, _)| need)
 }
 
+/// Formats sorted marks for `status-left`: at most [`MAX_NAMED`] named agents, plus an overflow
+/// badge (`▲ +N` when any hidden mark is waiting, `○ +N` otherwise). Empty when no agent is marked.
+pub fn format_bar(marks: &[Mark]) -> String {
+    if marks.is_empty() {
+        return String::new();
+    }
+    let mut parts = Vec::new();
+    for mark in marks.iter().take(MAX_NAMED) {
+        let name = mark.name.replace('#', "##");
+        match mark.need {
+            Need::Waiting => parts.push(format!("#[#{{@tx-signal-style}}]▲ {name}#[default]")),
+            Need::Finished => parts.push(format!("#[#{{@tx-muted-style}}]○ {name}#[default]")),
+        }
+    }
+    if marks.len() > MAX_NAMED {
+        let overflow = marks.len() - MAX_NAMED;
+        let has_waiting = marks[MAX_NAMED..]
+            .iter()
+            .any(|mark| mark.need == Need::Waiting);
+        if has_waiting {
+            parts.push(format!("#[#{{@tx-signal-style}}]▲ +{overflow}#[default]"));
+        } else {
+            parts.push(format!("#[#{{@tx-muted-style}}]○ +{overflow}#[default]"));
+        }
+    }
+    format!("{} ", parts.join(" "))
+}
+
+/// Recomputes [`BAR_OPTION`] on the tmux server from the current session marks.
+pub fn refresh_bar(ui: &Ui) {
+    let rendered = format_bar(&list(ui));
+    if rendered.is_empty() {
+        ui.quiet(&["set-option", "-gu", BAR_OPTION]);
+    } else {
+        ui.quiet(&["set-option", "-g", BAR_OPTION, &rendered]);
+    }
+}
+
 pub fn set(ui: &Ui, session: &str, need: Need, since: f64) {
     let value = format!("{} {since}", need.name());
     ui.quiet(&["set-option", "-t", session, MARK_OPTION, &value]);
+    refresh_bar(ui);
 }
 
 pub fn clear(ui: &Ui, session: &str) {
     ui.quiet(&["set-option", "-u", "-t", session, MARK_OPTION]);
+    refresh_bar(ui);
 }
 
 #[cfg(test)]
@@ -239,5 +285,29 @@ mod tests {
     fn a_session_nested_in_itself_ends_the_walk() {
         let clients = "/dev/ttys001\t$1\tattached,focused\n/dev/ttys010\t$1\tattached\n";
         assert_eq!(parse_looked_at(clients, "/dev/ttys010\t$1\t11\n"), ["$1"]);
+    }
+
+    #[test]
+    fn bar_caps_at_two_named_marks_with_overflow() {
+        assert_eq!(format_bar(&[]), "");
+        let marks = vec![
+            mark("1", "$1", "alpha", Need::Waiting, 10.0),
+            mark("2", "$2", "beta", Need::Waiting, 20.0),
+            mark("3", "$3", "gamma", Need::Waiting, 30.0),
+            mark("4", "$4", "delta", Need::Finished, 40.0),
+        ];
+        let bar = format_bar(&marks);
+        assert!(bar.contains("▲ alpha"), "{bar}");
+        assert!(bar.contains("▲ beta"), "{bar}");
+        assert!(!bar.contains("gamma"), "{bar}");
+        assert!(bar.contains("▲ +2"), "{bar}");
+
+        let finished_overflow = vec![
+            mark("1", "$1", "alpha", Need::Waiting, 10.0),
+            mark("2", "$2", "beta", Need::Finished, 20.0),
+            mark("3", "$3", "gamma", Need::Finished, 30.0),
+        ];
+        let bar = format_bar(&finished_overflow);
+        assert!(bar.contains("▲ alpha") && bar.contains("○ beta") && bar.contains("○ +1"), "{bar}");
     }
 }
