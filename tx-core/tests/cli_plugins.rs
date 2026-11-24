@@ -181,7 +181,7 @@ fn without_a_yaml_every_plugin_is_active() {
         !rows.iter().any(|row| row.starts_with("views\t")),
         "{rows:?}"
     );
-    assert_eq!(cli.ok(&["engines"]), "claude\ncodex\ncursor\n");
+    assert_eq!(cli.ok(&["engines"]), "antigravity\nclaude\ncodex\ncursor\n");
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn a_disabled_engine_disappears() {
     position(&rows, "engine-codex\tdisabled");
     position(&rows, "engine-claude\tactive");
     position(&rows, "kill\tactive");
-    assert_eq!(cli.ok(&["engines"]), "claude\ncursor\n");
+    assert_eq!(cli.ok(&["engines"]), "antigravity\nclaude\ncursor\n");
 }
 
 /// An entry for a plugin that is not there (a typo, a plugin of another install, a retired one)
@@ -222,7 +222,7 @@ fn an_entry_that_names_no_plugin_is_listed_as_missing_and_every_command_works() 
             "verbs": [], "engine": null,
         })
     );
-    assert_eq!(cli.ok(&["engines"]), "claude\ncodex\ncursor\n");
+    assert_eq!(cli.ok(&["engines"]), "antigravity\nclaude\ncodex\ncursor\n");
     assert!(cli.ok(&["help"]).contains("plugin verbs:"));
     cli.ok(&["ls"]);
     cli.ok(&["layout", "ls"]);
@@ -246,7 +246,7 @@ fn config_flag_overrides_the_default_file() {
     std::fs::write(&other, "plugins:\n  engine-claude: { enabled: false }\n").unwrap();
     assert_eq!(
         cli.ok(&["--config", other.to_str().unwrap(), "engines"]),
-        "codex\ncursor\n"
+        "antigravity\ncodex\ncursor\n"
     );
     // The variable stands for the flag, and the flag beats it.
     let run = |args: &[&str]| {
@@ -257,11 +257,11 @@ fn config_flag_overrides_the_default_file() {
             .unwrap();
         String::from_utf8_lossy(&output.stdout).into_owned()
     };
-    assert_eq!(run(&["engines"]), "codex\ncursor\n");
+    assert_eq!(run(&["engines"]), "antigravity\ncodex\ncursor\n");
     let default = cli.state().join("config.yaml");
     assert_eq!(
         run(&["--config", default.to_str().unwrap(), "engines"]),
-        "claude\ncursor\n"
+        "antigravity\nclaude\ncursor\n"
     );
 }
 

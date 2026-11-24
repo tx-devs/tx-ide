@@ -1850,6 +1850,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tx-engine-antigravity"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tx-core",
+ "uuid",
+]
+
+[[package]]
 name = "tx-engine-claude"
 version = "0.1.0"
 dependencies = [

@@ -323,7 +323,11 @@ fn what_the_engines_add_is_what_their_programs_report() {
     assert_eq!(code, 0);
     assert!(
         out.contains(
-            "mine\ttest\n# claude adds to every agent's tools: Skill, ToolSearch\n\
+            "mine\ttest\n# antigravity: name a base model (gemini-4-neon) and let the effort pick its tier; a model id \
+             with a tier (gemini-4-neon-low) and a different effort make agy fall back to high, and max \
+             is high on gemini 4 neon\n\
+             # antigravity fork copies the conversation with the sqlite3 CLI, which must be on PATH\n\
+             # claude adds to every agent's tools: Skill, ToolSearch\n\
              # cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)\n\
              \nskills:"
         ),
@@ -365,7 +369,11 @@ fn what_the_engines_add_is_what_their_programs_report() {
     assert_eq!(
         out,
         format!(
-            "# claude adds to every agent's tools: Skill, ToolSearch\n\
+            "# antigravity: name a base model (gemini-4-neon) and let the effort pick its tier; a model id \
+             with a tier (gemini-4-neon-low) and a different effort make agy fall back to high, and max \
+             is high on gemini 4 neon\n\
+             # antigravity fork copies the conversation with the sqlite3 CLI, which must be on PATH\n\
+             # claude adds to every agent's tools: Skill, ToolSearch\n\
              # cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)\n\
              {mine}:5: warning: bundled skill pdf brings in all bundled skills: pdf, and any \
              others this Claude version ships\nok: 1 agents, 0 skills, 0 MCP servers\n"
@@ -471,7 +479,7 @@ fn without_codex_no_engine_lists_mcp_tools_and_codex_cannot_be_checked() {
         (
             1,
             String::new(),
-            "tx: engine codex is not enabled (enabled: claude, cursor)\n".to_owned()
+            "tx: engine codex is not enabled (enabled: antigravity, claude, cursor)\n".to_owned()
         )
     );
 }

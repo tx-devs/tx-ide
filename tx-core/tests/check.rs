@@ -310,7 +310,7 @@ fn an_engine_that_nothing_provides_is_reported_with_the_active_ones() {
     let config = cli.state().join("config.yaml");
     assert!(
         outcome.out.contains(&format!(
-            "{}: agent.engine \"kodex\" is not an active engine (active: claude, codex, cursor)\n",
+            "{}: agent.engine \"kodex\" is not an active engine (active: antigravity, claude, codex, cursor)\n",
             config.display()
         )),
         "{}",

@@ -9,7 +9,7 @@ keep running after the launching CLI exits; attaching shows the agent's native t
 | crate | what |
 |---|---|
 | `tx-core` | the library (`TxCore` and the public operations, the plugin SDK) and the `tx` and `txi` binaries |
-| `tx-engine-claude`, `tx-engine-codex`, `tx-engine-cursor` | one `LlmEngine` each, depending only on `tx-core` |
+| `tx-engine-claude`, `tx-engine-codex`, `tx-engine-cursor`, `tx-engine-antigravity` | one `LlmEngine` each, depending only on `tx-core` |
 
 ## Layout
 
