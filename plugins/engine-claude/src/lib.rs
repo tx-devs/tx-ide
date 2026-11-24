@@ -69,6 +69,9 @@ pub const PLUGIN_SKILLS_DIR: &str = ".claude/tx-plugin/skills";
 pub const PLUGIN_NAME: &str = "tx";
 pub const PLUGIN_DIR_FLAG: &str = "--plugin-dir";
 pub const MODEL_FLAG: &str = "--model";
+/// The models the new-agent form offers, the one `claude` runs without `--model` first; the manifest
+/// says the same.
+pub const MODELS: [&str; 4] = ["fable", "opus", "sonnet", "haiku"];
 pub const RESUME_FLAG: &str = "--resume";
 pub const SESSION_ID_FLAG: &str = "--session-id";
 pub const FORK_SESSION_FLAG: &str = "--fork-session";
@@ -634,6 +637,16 @@ impl LlmEngine for ClaudeAdapter {
 
     fn notes(&self) -> Vec<String> {
         vec![baseline_note()]
+    }
+
+    fn models(&self) -> Vec<String> {
+        MODELS.map(str::to_owned).to_vec()
+    }
+
+    fn efforts(&self) -> Vec<String> {
+        Effort::ALL
+            .map(|effort| effort.as_str().to_owned())
+            .to_vec()
     }
 
     fn warnings(&self, request: &DefinitionsRequest<'_>) -> Vec<Finding> {

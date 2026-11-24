@@ -12,3 +12,5 @@ engine:
   methods: [prepare, archive, restore, warnings, check, tools]
   interrupt: { key: Escape, state: idle }
   notes: ["claude adds to every agent's tools: Skill, ToolSearch"]
+  models: [fable, opus, sonnet, haiku]
+  efforts: [low, medium, high, xhigh, max]

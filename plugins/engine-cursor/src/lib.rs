@@ -91,6 +91,19 @@ pub const HOOK_EVENTS: [&str; 6] = [
 pub const NOTES: [&str; 1] =
     ["cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)"];
 
+/// The models the new-agent form offers, the one `cursor-agent` runs without `--model` first; a
+/// few of `cursor-agent --list-models` (2026.11.22), each naming its effort tier. Cursor has no
+/// effort, so the form offers none. The manifest says the same.
+pub const MODELS: [&str; 7] = [
+    "auto",
+    "claude-opus-5-5-high",
+    "claude-sonnet-5-thinking-high",
+    "gpt-5.6-sol-high",
+    "gpt-5.3-codex-high",
+    "composer-2.5",
+    "grok-4.7-high",
+];
+
 /// What every launch carries that no tx option removes (cursor-agent 2026.11.22).
 pub const FORCED: [&str; 8] = [
     "Cursor's own system prompt and built-in tools: the profile is an always-applied rule beside \
@@ -488,6 +501,10 @@ impl LlmEngine for CursorAdapter {
 
     fn notes(&self) -> Vec<String> {
         NOTES.iter().map(|note| (*note).to_owned()).collect()
+    }
+
+    fn models(&self) -> Vec<String> {
+        MODELS.map(str::to_owned).to_vec()
     }
 
     fn check(&self, request: &DefinitionsRequest<'_>) -> Result<EngineCheck, EngineError> {
