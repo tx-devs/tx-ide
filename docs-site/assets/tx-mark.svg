@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 64" width="112" height="64" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter" role="img" aria-label="tx">
+  <line x1="20" y1="8" x2="20" y2="56"/>
+  <line x1="4" y1="24" x2="40" y2="24"/>
+  <line x1="20" y1="56" x2="40" y2="56"/>
+  <line x1="60" y1="16" x2="104" y2="56"/>
+  <line x1="104" y1="16" x2="60" y2="56"/>
+</svg>

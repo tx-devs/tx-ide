@@ -117,18 +117,35 @@ done
 ((UPGRADE)) && [[ -n "$PRESET$PLUGINS" ]] && misuse "--upgrade takes the recorded selection: no --preset, no --plugins"
 ((UPGRADE)) && ((LINK_DOTFILES)) && misuse "--upgrade never writes a dotfile: run install --upgrade alone; install --link-dotfiles, with your --preset or --plugins, links them"
 
-B=$'\e[1m'
-G=$'\e[32m'
-Y=$'\e[33m'
-RED=$'\e[31m'
-D=$'\e[2m'
-X=$'\e[0m'
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  B=$'\e[1m'
+  G=$'\e[32m'
+  Y=$'\e[33m'
+  RED=$'\e[31m'
+  D=$'\e[2m'
+  X=$'\e[0m'
+elif [[ -t 1 ]]; then
+  B=$'\e[1m'
+  G=''
+  Y=''
+  RED=''
+  D=$'\e[2m'
+  X=$'\e[0m'
+else
+  B=''
+  G=''
+  Y=''
+  RED=''
+  D=''
+  X=''
+fi
 ok() { printf '  %s→%s %-52s %s%s%s\n' "$G" "$X" "$1" "$G" "${2:-ok}" "$X"; }
 warn() { printf '  %s→%s %-52s %s%s%s\n' "$Y" "$X" "$1" "$Y" "$2" "$X"; }
 fail() { printf '  %s→%s %-52s %s%s%s\n' "$RED" "$X" "$1" "$RED" "$2" "$X"; }
 info() { printf '  %s%s%s\n' "$D" "$*" "$X"; }
 would() { printf '  %s→%s %-52s %swould %s%s\n' "$Y" "$X" "$1" "$Y" "$2" "$X"; }
 header() { printf '\n%s%s%s\n' "$B" "$*" "$X"; }
+[[ -t 1 ]] && printf '%s╋╳  tx-ide install%s\n' "$B" "$X"
 
 # The file behind a symlink (settings.json is usually a link into a dotfiles repository): edits
 # and backups land there, so the link survives and the repository sees the change.

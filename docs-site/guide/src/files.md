@@ -153,7 +153,10 @@ pays for it during the update instead of on the first key; a shipped program ans
 
 **The published resources.** On every run `tx update` writes the six directories `bin`, `keys`,
 `conf`, `nvim`, `roles` and `harness` itself, so an install without the `ide` plugin has its
-roles and harness too. The sources, in order: core's own roles and harness, then every
+roles and harness too. The `ide` updater then generates `conf/theme.tmux` and `conf/theme.lua`
+from `config.yaml`'s `theme:` section (and custom presets under `<config>/themes/<name>.yaml`),
+and tmux's `client-dark-theme` / `client-light-theme` hooks regenerate them live via
+`tx _theme-apply`. The sources, in order: core's own roles and harness, then every
 active plugin's resources in plugin order (a plugin's `agents/…` lands under `roles/`). A later
 source replaces an earlier one of the same name, so a plugin of your own can replace a shipped
 role. `bin/` and `keys/` files are executable. A file in those directories that no source

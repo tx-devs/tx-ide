@@ -1,3 +1,7 @@
+<p>
+  <img src="docs-site/assets/tx-mark.svg" alt="tx" width="56" height="32">
+</p>
+
 # tx-ide
 
 tx-ide is an IDE in tmux for a swarm of interactive coding agents. Each agent is an engine's own
@@ -234,6 +238,28 @@ selected later has no entry, which means on.
 
 `model` applies only to `agent.engine`: with `--engine codex`, Codex runs its own default.
 `engine-claude` also takes `claude_settings`, Claude settings merged into every launch.
+
+### Theme
+
+`theme:` in `~/.config/tx-ide/config.yaml` controls the visual identity across tmux, ratatui
+screens, fzf pickers and Neovim forms (and regenerates `<data>/conf/theme.tmux` and `theme.lua`
+on `tx update` or live when the terminal switches between dark and light):
+
+```yaml
+theme:
+  name: auto                 # auto | tx-dark | tx-light | terminal | tokyo-night | <custom>
+  status_style: rule         # rule (heavy line with inset active window) | bar (solid fill)
+  glyphs: unicode            # unicode (╋╳, ●/▖/▲/○/×) | ascii (tx, */-/!/o/x)
+  # colors:                  # optional per-role overrides (#rrggbb or ANSI name)
+  #   accent: "#32b8ac"
+  #   signal: "#e0af68"
+```
+
+With `name: auto`, tx follows tmux's `#{client_theme}` (`tx-dark` / `tx-light`) and falls back to
+`terminal` (pure terminal ANSI) when polarity is unknown. Guest-pane borders and the status rule
+stay achromatic — the single `signal` colour appears on the frame only when an agent needs you.
+Custom presets live under `~/.config/tx-ide/themes/<name>.yaml`. Setting `NO_COLOR=1` suppresses
+every colour while keeping typography and glyph distinctions intact.
 
 ## Where files live
 
