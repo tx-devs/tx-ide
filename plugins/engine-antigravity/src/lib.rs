@@ -70,6 +70,15 @@ pub const COMMAND_KEY: &str = "command";
 
 pub const CONVERSATION_FLAG: &str = "--conversation";
 pub const MODEL_FLAG: &str = "--model";
+/// The models the new-agent form offers, the one `agy` runs without `--model` first (agy 1.5.16):
+/// base ids, whose tier the effort picks. The manifest says the same.
+pub const MODELS: [&str; 5] = [
+    "gemini-4-neon",
+    "gemini-4-carbon",
+    "gemini-4-argon",
+    "gemini-4-hydrogen",
+    "gemini-3.8-flash",
+];
 pub const EFFORT_FLAG: &str = "--effort";
 pub const AGENT_FLAG: &str = "--agent";
 pub const SETTINGS_FLAG: &str = "--settings";
@@ -829,6 +838,16 @@ impl LlmEngine for AntigravityAdapter {
 
     fn notes(&self) -> Vec<String> {
         NOTES.iter().map(|note| (*note).to_owned()).collect()
+    }
+
+    fn models(&self) -> Vec<String> {
+        MODELS.map(str::to_owned).to_vec()
+    }
+
+    fn efforts(&self) -> Vec<String> {
+        Effort::ALL
+            .map(|effort| effort.as_str().to_owned())
+            .to_vec()
     }
 
     fn check(&self, request: &DefinitionsRequest<'_>) -> Result<EngineCheck, EngineError> {

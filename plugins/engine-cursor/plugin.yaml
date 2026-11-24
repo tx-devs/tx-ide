@@ -12,3 +12,11 @@ engine:
   methods: [archive, restore, check]
   interrupt: { key: C-c, state: idle }
   notes: ["cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)"]
+  models:
+    - auto
+    - claude-opus-5-5-high
+    - claude-sonnet-5-thinking-high
+    - gpt-5.6-sol-high
+    - gpt-5.3-codex-high
+    - composer-2.5
+    - grok-4.7-high

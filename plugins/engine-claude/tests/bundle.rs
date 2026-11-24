@@ -30,6 +30,9 @@ fn the_manifest_says_what_the_adapter_answers() {
     .unwrap();
     // `tx harness ls` and `tx harness check` print the manifest's notes without starting the program.
     assert_eq!(engine.notes, adapter.notes());
+    // The new-agent form offers the manifest's models and efforts.
+    assert_eq!(engine.models, adapter.models());
+    assert_eq!(engine.efforts, adapter.efforts());
     assert_eq!(
         engine.methods,
         [

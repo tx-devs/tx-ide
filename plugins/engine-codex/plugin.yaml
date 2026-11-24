@@ -11,3 +11,5 @@ engine:
   hook: { bin: tx-engine-codex, args: [--tx-hook] }
   methods: [archive, restore, check, tools]
   interrupt: { key: Escape, state: idle }
+  models: [gpt-6-astra, gpt-6.1-sol, gpt-6-sol, gpt-6-luna]
+  efforts: [none, minimal, low, medium, high, xhigh, max]
