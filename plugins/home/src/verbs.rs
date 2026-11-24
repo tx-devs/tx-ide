@@ -438,6 +438,10 @@ fn open(core: &TxCore, ui: &Ui, pane: &str, client: &str) -> Result<i32, VerbErr
     let choice_path = choice.to_string_lossy();
     let command = tx.shell(&[TUI_VERB, pane, "--popup", "--choice", &choice_path]);
     // -EE: a home that fails keeps its popup open, showing why.
+    let theme = tx_client::theme::active();
+    let title = theme
+        .glyphs
+        .inset_title(&format!("{} home", theme.glyphs.mark));
     ui.run(&[
         "display-popup",
         "-c",
@@ -452,11 +456,9 @@ fn open(core: &TxCore, ui: &Ui, pane: &str, client: &str) -> Result<i32, VerbErr
         "-y",
         "C",
         "-b",
-        "rounded",
-        "-S",
-        "fg=#7aa2f7",
+        tx_client::theme::BorderRole::Frame.tmux_lines(),
         "-T",
-        " tx-ide ",
+        &title,
         &command,
     ])
     .map_err(failed)?;
@@ -489,11 +491,14 @@ struct Popup<'a> {
     height: &'a str,
     y: &'a str,
     title: &'a str,
-    /// The form popups (new agent, fork) wear the spawn / chat binds' heavy yellow frame.
+    /// Operator form popups (new agent, fork) wear the rounded Operator border; tx tool popups
+    /// inherit the heavy Frame border from `theme.tmux`.
     form: bool,
 }
 
 fn popup(ui: &Ui, client: &str, spec: &Popup<'_>, command: &str) {
+    let theme = tx_client::theme::active();
+    let inset_title = theme.glyphs.inset_title(spec.title);
     let mut args = vec![
         "display-popup",
         "-c",
@@ -508,10 +513,20 @@ fn popup(ui: &Ui, client: &str, spec: &Popup<'_>, command: &str) {
         "-y",
         spec.y,
     ];
+    let border_style = if spec.form {
+        let (ok, value) = ui.quiet(&["show-option", "-gv", "@tx-popup-operator-border-style"]);
+        let trimmed = value.trim();
+        (ok && !trimmed.is_empty()).then(|| trimmed.to_owned())
+    } else {
+        None
+    };
     if spec.form {
-        args.extend(["-b", "heavy", "-S", "fg=yellow,bold"]);
+        args.extend(["-b", tx_client::theme::BorderRole::Operator.tmux_lines()]);
+        if let Some(style) = border_style.as_deref() {
+            args.extend(["-S", style]);
+        }
     }
-    args.extend(["-T", spec.title, command]);
+    args.extend(["-T", &inset_title, command]);
     if let Err(error) = ui.run(&args) {
         status(ui, client, &format!("tx home: {error}"));
     }

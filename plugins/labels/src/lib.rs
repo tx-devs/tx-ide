@@ -10,17 +10,14 @@ use tx_core::{
     Registry, TxCore, Verb, VerbError, VerbIo, events,
 };
 
-use tx_client::palette::WARN_HEX;
-use tx_client::render::{PickerEntry, activity_at, reltime, tag_hex};
-use tx_client::tmux::{DIM_FG_HEX, Ui, WORKING_HEX};
+use tx_client::render::{PickerEntry, activity_at, reltime};
+use tx_client::theme::{Role, active};
+use tx_client::tmux::Ui;
 
 pub const PLUGIN_ID: &str = "labels";
 
 const NAME_OPTION: &str = "@tx-name";
 const REMOTE_OPTION: &str = "@remote-session";
-const NOT_NESTED: &str = "#[fg=colour240,nobold]\u{2014}#[default]";
-/// Four middle sextants: the width of ` 1h `, so the bar fills the slot the resting age takes.
-const WORKING_BAR: &str = "\u{1FB0B}\u{1FB0B}\u{1FB0B}\u{1FB0B}";
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LabelsPlugin;
@@ -184,12 +181,18 @@ impl Verb for PaneLabel {
             return Ok(0);
         };
         let ui = Ui::from_core(core);
+        let theme = active();
+        let inset_right = theme.glyphs.inset_right;
         let label = if let Some(remote) = ui.pane_option(pane, REMOTE_OPTION) {
-            format!("(r) {remote}")
+            format!("(r) {remote} {inset_right}")
         } else if let Some(inner) = ui.inner_for_pane(pane) {
             nested_label(core, &inner)
         } else {
-            NOT_NESTED.to_owned()
+            format!(
+                "#[{}]{}#[default] {inset_right}",
+                theme.tmux_fg_style(Role::Muted),
+                theme.glyphs.empty
+            )
         };
         write_out(io, &label)?;
         Ok(0)
@@ -218,30 +221,42 @@ impl Verb for LabelProgram {
     }
 }
 
-/// The record's name in bold plus a chip per tag; the raw tmux name when it has no record.
+/// The record's name in bold plus a chip per tag, closed with the right inset tee; the raw tmux
+/// name when it has no record.
 fn nested_label(core: &TxCore, inner: &str) -> String {
+    let theme = active();
+    let inset_right = theme.glyphs.inset_right;
     let session = core.resolve(inner).and_then(|id| core.get_agent(&id)).ok();
     let Some(session) = session else {
-        return format!("#[bold]{inner}#[default]");
+        return format!("#[bold]{inner}#[default] {inset_right}");
     };
     let mut label = format!("#[bold]{}#[default]", session.name);
     for tag in &session.tags {
         label.push_str(&format!(
             " #[fg={},#{{?pane_active,bold,nobold}}][{tag}]#[default]",
-            tag_hex(tag)
+            theme.tag_tmux(tag)
         ));
     }
+    label.push_str(&format!(" {inset_right}"));
     label.push_str(&state_mark(&session, events::now()));
     label
 }
 
-/// The border's right end: a green bar while the agent works, the age since its last activity
-/// while it rests (`0m` for the first minute), behind a `▲` when it rests on the operator (an
-/// approval, a question, a plan), nothing while it starts or after it ended.
+/// The border's right inset: an achromatic travelling bar (`━───` … `───━`) while the agent works,
+/// the age since its last activity while it rests (`0m` for the first minute), behind a `▲` in
+/// the signal colour when it rests on the operator (an approval, a question, a plan), nothing
+/// while it starts or after it ended.
 fn state_mark(session: &Agent, now: f64) -> String {
+    let theme = active();
+    let glyphs = theme.glyphs;
+    let inset_left = glyphs.inset_left;
+    let inset_right = glyphs.inset_right;
     match session.state {
         LlmEngineState::Working => {
-            format!("#[align=right]#[fg={WORKING_HEX}]{WORKING_BAR}#[default]")
+            let phase = (now.max(0.0) as usize) % glyphs.working_bar.len();
+            let bar = glyphs.working_bar[phase];
+            let style = theme.tmux_fg_style(Role::Muted);
+            format!("#[align=right]{inset_left} #[{style}]{bar}#[default] {inset_right}")
         }
         LlmEngineState::Idle => {
             let since = activity_at(PickerEntry::Agent(session));
@@ -251,9 +266,14 @@ fn state_mark(session: &Agent, now: f64) -> String {
                 reltime(Some(since), now)
             };
             if session.idle_reason == Some(IdleReason::Waiting) {
-                format!("#[align=right] #[fg={WARN_HEX}]▲ {age}#[default] ")
+                let style = theme.tmux_fg_style(Role::Signal);
+                format!(
+                    "#[align=right]{inset_left} #[{style}]{} {age}#[default] {inset_right}",
+                    glyphs.needs_you
+                )
             } else {
-                format!("#[align=right] #[fg={DIM_FG_HEX}]{age}#[default] ")
+                let style = theme.tmux_fg_style(Role::Muted);
+                format!("#[align=right]{inset_left} #[{style}]{age}#[default] {inset_right}")
             }
         }
         LlmEngineState::Starting | LlmEngineState::Ended => String::new(),

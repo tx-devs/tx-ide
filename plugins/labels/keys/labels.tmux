@@ -35,7 +35,7 @@ LABEL=$($TX _label-program 2>/dev/null) || LABEL=""
 [ -n "$LABEL" ] || LABEL=$TX_BIN
 
 cat >>"$CONF" <<EOF2
-set -g pane-border-format " [#P] #($LABEL #{@tx-arguments} _pane-label #D #{@tx-label-rev})"
+set -g pane-border-format "#{@tx-inset-left} [#P] #($LABEL #{@tx-arguments} _pane-label #D #{@tx-label-rev})"
 set-hook -g after-new-window "if-shell -F '#{@tx-view}' 'setw pane-border-status top'"
 EOF2
 

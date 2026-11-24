@@ -18,7 +18,7 @@ CONF=$(mktemp -t tx-switch-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind P display-popup -E -w 60 -h 30 -x C -y C -T " plugins " "$TX switch"
+bind P display-popup -E -w 60 -h 30 -x C -y C -T "#{@tx-inset-left} #{@tx-mark} plugins #{@tx-inset-right}" "$TX switch"
 EOF2
 
 tmux source-file "$CONF"

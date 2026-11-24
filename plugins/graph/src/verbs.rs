@@ -274,6 +274,10 @@ impl Verb for GraphOpen {
             .map(|word| shell_quote(word))
             .collect::<Vec<_>>()
             .join(" ");
+        let theme = tx_client::theme::active();
+        let title = theme
+            .glyphs
+            .inset_title(&format!("{} graph", theme.glyphs.mark));
         ui.run(&[
             "display-popup",
             "-c",
@@ -284,7 +288,7 @@ impl Verb for GraphOpen {
             "-h",
             POPUP_HEIGHT,
             "-T",
-            " graph ",
+            &title,
             &command,
         ])
         .map_err(failed)?;
