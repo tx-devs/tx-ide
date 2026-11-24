@@ -305,6 +305,8 @@ pub struct EngineKind {
 }
 
 impl EngineKind {
+    /// The kind the Antigravity engine provides.
+    pub const ANTIGRAVITY: EngineKind = EngineKind::constant("antigravity");
     /// The kind the Claude engine provides.
     pub const CLAUDE: EngineKind = EngineKind::constant("claude");
     /// The kind the Codex engine provides.

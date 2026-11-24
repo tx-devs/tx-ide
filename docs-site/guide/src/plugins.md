@@ -12,6 +12,7 @@ tier `ide`, and `full`, the default, adds tier `extra`.
 | `engine-claude` | core | `tx-engine-claude` |
 | `engine-codex` | core | `tx-engine-codex` |
 | `engine-cursor` | core | `tx-engine-cursor` |
+| `engine-antigravity` | core | `tx-engine-antigravity` |
 | `artifacts` | core | `tx-artifacts` |
 | `chat` | core | `tx-chat` |
 | `kill` | core | `tx-kill` |
@@ -99,6 +100,38 @@ granted skills as links under `.cursor/skills/`, and the definition's MCP server
 transcript and, once the agent ended, the chat's `store.db`; `restore` puts them back before a
 resume. Cursor has no tool switches, and it also runs your `~/.cursor` servers and hooks and the
 Claude Code hooks of `~/.claude/settings.json`; `tx harness check --engine cursor` lists them.
+
+**`engine-antigravity`** runs the Antigravity CLI for Google's Gemini models (install it with
+`curl -fsSL https://antigravity.google/cli/install.sh | bash`, then run `agy` once to sign in): `agy
+[--conversation ID] [--model M] [--effort E] [--agent tx] --dangerously-skip-permissions
+--settings '{"trustedWorkspaces":["<worktree>"]}' [-i PROMPT]` (agy 1.5.16). The worktree is
+trusted per launch through `--settings`, and nothing is written to agy's settings. agy takes no
+per-run hooks or system prompt, so each launch writes them into the worktree:
+- the profile as the custom agent `.agents/agents/tx.md`. Its body replaces Antigravity's persona
+  line. It lists agy's full default tool set, since a custom agent gets only what it names, and
+  carries the definition's MCP servers.
+- tx's hooks as the workspace plugin `.agents/plugins/tx/`, so a repository's own
+  `.agents/hooks.json` is left alone.
+- granted skills as copies in that plugin, where agy lists them as `tx:<name>`. agy skips a skill
+  linked from outside the workspace.
+
+agy names the conversation itself, and every hook payload carries its id. The first id is
+recorded and kept. Hooks naming another conversation are ignored, because the agent's subagents
+fire the same hooks; a conversation switched to inside the TUI is not followed either. agy fires
+nothing until the first prompt, so a resume fires a synthetic `Ready` hook a second after
+launch. Name a base
+model (`gemini-4-neon`) and let `effort` pick its tier. agy also runs the Claude models, billed
+per token through Antigravity, so set a Gemini model when `agent.model` names a Claude one. Escape interrupts a turn.
+
+A fork copies the source's conversation database under the new agent's id with the `sqlite3`
+CLI, as agy's own `/fork` does. `archive` keeps the transcript and, once the agent ended, a SQLite backup of the
+conversation's `.db`. `restore` puts them back before a resume.
+
+Some things cannot be kept out of an Antigravity agent. An agent's own MCP servers come only
+together with your global `~/.gemini/config` servers, so those load too, along with your global
+hooks, skills and rules and `~/.agents/skills`. agy expands no `${VAR}`: a stdio server's `env`
+may pass a variable only under its own name, and a header naming one is refused. `tx harness
+check --engine antigravity` lists all of this.
 
 ## The IDE
 

@@ -145,7 +145,10 @@ fn alive(pid: &str) -> bool {
 #[test]
 fn an_installed_engine_is_listed_next_to_the_shipped_ones() {
     let cli = Cli::with_the_stand_in();
-    assert_eq!(cli.ok(&["engines"]), "claude\ncodex\ncursor\nfake\n");
+    assert_eq!(
+        cli.ok(&["engines"]),
+        "antigravity\nclaude\ncodex\ncursor\nfake\n"
+    );
     let plugins: Value = serde_json::from_str(&cli.ok(&["plugins", "--json"])).unwrap();
     let fake = plugins
         .as_array()
@@ -161,7 +164,7 @@ fn an_installed_engine_is_listed_next_to_the_shipped_ones() {
     assert!(!cli.fake_data("pid").exists());
     // Switched off, its kind is gone.
     cli.write_yaml("plugins:\n  engine-fake: { enabled: false }\n");
-    assert_eq!(cli.ok(&["engines"]), "claude\ncodex\ncursor\n");
+    assert_eq!(cli.ok(&["engines"]), "antigravity\nclaude\ncodex\ncursor\n");
 }
 
 /// Acceptance 1 and the calls behind it: create, hook, send, interrupt, fork, stop, respawn.
@@ -343,7 +346,7 @@ fn a_kind_no_active_engine_provides_fails_at_launch_and_leaves_nothing() {
     assert_eq!(refused.status.code(), Some(1));
     assert_eq!(
         String::from_utf8_lossy(&refused.stderr),
-        "tx: engine nope is not enabled (enabled: claude, codex, cursor, fake)\n"
+        "tx: engine nope is not enabled (enabled: antigravity, claude, codex, cursor, fake)\n"
     );
     let misuse = create("Bad Kind");
     assert_eq!(misuse.status.code(), Some(2));
@@ -376,11 +379,11 @@ fn a_disabled_engine_plugin_keeps_its_records_and_launches_none() {
     assert_eq!(cli.show("a")["engine"], "fake");
     assert_eq!(
         cli.fails(&["respawn", "a"], 1),
-        "tx: engine fake is not enabled (enabled: claude, codex, cursor)\n"
+        "tx: engine fake is not enabled (enabled: antigravity, claude, codex, cursor)\n"
     );
     assert_eq!(
         cli.fails(&["fork", "c", "--prompt", "branch"], 1),
-        "tx: engine fake is not enabled (enabled: claude, codex, cursor)\n"
+        "tx: engine fake is not enabled (enabled: antigravity, claude, codex, cursor)\n"
     );
     // A hook of its running agent finds no engine: that is not a failure, and nothing moves.
     let hook = cli.hook("Stop", &running);
@@ -615,7 +618,10 @@ fn of_two_plugins_with_one_kind_or_one_ext_key_the_first_keeps_it() {
     };
     engine("engine-key", "  kind: other\n  ext_key: fake\n");
     engine("engine-twin", "  kind: fake\n  ext_key: twin\n");
-    assert_eq!(cli.ok(&["engines"]), "claude\ncodex\ncursor\nfake\n");
+    assert_eq!(
+        cli.ok(&["engines"]),
+        "antigravity\nclaude\ncodex\ncursor\nfake\n"
+    );
     let plugins: Value = serde_json::from_str(&cli.ok(&["plugins", "--json"])).unwrap();
     let row = |id: &str| {
         plugins

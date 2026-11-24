@@ -363,16 +363,19 @@ fn the_config_file_lives_in_the_config_directory() {
         .unwrap();
     };
     write(&sandbox.home().join(".config/tx-ide"));
-    assert_eq!(sandbox.ok(&["engines"], &[]), "claude\ncursor\n");
+    assert_eq!(
+        sandbox.ok(&["engines"], &[]),
+        "antigravity\nclaude\ncursor\n"
+    );
     let xdg = sandbox.path().join("xdg-config");
     assert_eq!(
         sandbox.ok(&["engines"], &[("XDG_CONFIG_HOME", xdg.to_str().unwrap())]),
-        "claude\ncodex\ncursor\n"
+        "antigravity\nclaude\ncodex\ncursor\n"
     );
     write(&xdg.join("tx-ide"));
     assert_eq!(
         sandbox.ok(&["engines"], &[("XDG_CONFIG_HOME", xdg.to_str().unwrap())]),
-        "claude\ncursor\n"
+        "antigravity\nclaude\ncursor\n"
     );
 }
 

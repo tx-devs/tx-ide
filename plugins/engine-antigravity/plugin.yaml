@@ -1,0 +1,17 @@
+api: 1
+id: engine-antigravity
+description: The Antigravity engine (agy), for Google's Gemini models.
+tier: core
+needs: [agy]
+engine:
+  kind: antigravity
+  ext_key: antigravity
+  bin: tx-engine-antigravity
+  args: [--tx-engine]
+  hook: { bin: tx-engine-antigravity, args: [--tx-hook] }
+  methods: [archive, restore, check]
+  interrupt: { key: Escape, state: idle }
+  notes:
+    - "antigravity: name a base model (gemini-4-neon) and let the effort pick its tier; a model id with a tier (gemini-4-neon-low) and a different effort make agy fall back to high, and max is high on gemini 4 neon"
+    - "antigravity fork copies the conversation with the sqlite3 CLI, which must be on PATH"
+    - "antigravity runs the Claude models too (claude-opus-5-5), billed per token through Antigravity: set a Gemini model when agent.model names a Claude one"
