@@ -15,6 +15,8 @@ use tx_client::editor::{Decoder, Key, Terminal, read_key, write_all};
 use tx_client::render::{ACCENT_ANSI, BOLD, DIM_FG_ANSI, RESET, SELECTION_BG, WARN_ANSI};
 
 pub const HINT: &str = "Enter/key attach here   f focus its pane   p popup   Esc close";
+/// Screen lines that are not list: the header, a blank line, the notice line and the hint.
+pub const CHROME_ROWS: usize = 4;
 
 /// The key that picks row `index` (0-based), as choose-tree labels them: `1`…`9`, then `M-a`…
 /// `M-z`, then `M-A`…`M-Z`; `None` past those.
@@ -165,44 +167,54 @@ impl<'a> Picker<'a> {
         std::mem::replace(&mut self.operation, Operation::Attach)
     }
 
-    /// The screen: header, sections and rows (the cursor's row on the selection background), the
+    /// The position in `items` of the cursor's row.
+    fn cursor_item(&self) -> usize {
+        self.items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| matches!(item, Item::Row(_)))
+            .nth(self.cursor)
+            .map_or(0, |(position, _)| position)
+    }
+
+    /// The screen: the header, the items that fit between it and the notice and hint lines
+    /// (scrolled just far enough to show the cursor's row, on the selection background), the
     /// hint last.
     pub fn render(&self, height: usize, width: usize) -> String {
         let mut out = String::from("\x1b[0m\x1b[H\x1b[2J");
-        let mut screen_row = 0;
-        let mut put = |text: &str| {
+        let mut put = |screen_row: usize, text: &str| {
             if screen_row < height {
                 out += &format!("\x1b[{};1H{text}{RESET}", screen_row + 1);
             }
-            screen_row += 1;
         };
-        put(&format!("{DIM_FG_ANSI}{}", self.header));
-        let mut row = 0;
-        for item in self.items {
-            match item {
-                Item::Section(title) => put(&format!("{ACCENT_ANSI}{BOLD}{title}")),
+        put(0, &format!("{DIM_FG_ANSI}{}", self.header));
+        let visible = height.saturating_sub(CHROME_ROWS).max(1);
+        let first = (self.cursor_item() + 1).saturating_sub(visible);
+        let mut row = self.items[..first]
+            .iter()
+            .filter(|item| matches!(item, Item::Row(_)))
+            .count();
+        for (offset, item) in self.items[first..].iter().take(visible).enumerate() {
+            let line = match item {
+                Item::Section(title) => format!("{ACCENT_ANSI}{BOLD}{title}"),
                 Item::Row(line) if row == self.cursor => {
                     let fill = width.saturating_sub(visible_width(line));
-                    put(&format!(
-                        "\x1b[48;5;{SELECTION_BG}m{line}{}",
-                        " ".repeat(fill)
-                    ));
-                    row += 1;
+                    format!("\x1b[48;5;{SELECTION_BG}m{line}{}", " ".repeat(fill))
                 }
-                Item::Row(line) => {
-                    put(line);
-                    row += 1;
-                }
+                Item::Row(line) => line.clone(),
+            };
+            if matches!(item, Item::Row(_)) {
+                row += 1;
             }
+            put(1 + offset, &line);
         }
-        if height > self.items.len() + 3 {
+        if height >= CHROME_ROWS {
             if let Some(notice) = &self.notice {
-                out += &format!("\x1b[{};1H{WARN_ANSI}{notice}{RESET}", height - 1);
+                put(height - 2, &format!("{WARN_ANSI}{notice}"));
             }
-            out += &format!(
-                "\x1b[{};1H{DIM_FG_ANSI}{}{RESET}",
-                height,
-                self.operation.hint()
+            put(
+                height - 1,
+                &format!("{DIM_FG_ANSI}{}", self.operation.hint()),
             );
         }
         out
@@ -325,6 +337,24 @@ mod tests {
         assert!(picker.render(6, 20).contains("nope"));
         picker.handle(Key::Down);
         assert!(!picker.render(6, 20).contains("nope"));
+    }
+
+    #[test]
+    fn a_list_taller_than_the_screen_scrolls_with_the_cursor() {
+        let mut items = vec![Item::Section("S".to_owned())];
+        items.extend((0..10).map(|i| Item::Row(format!("row{i}"))));
+        let mut picker = Picker::new("H", &items);
+        // 8 lines: the header, 4 of list, a blank, the notice line, the hint.
+        let screen = picker.render(8, 20);
+        assert!(screen.contains("S") && screen.contains("row2") && !screen.contains("row3"));
+        assert!(screen.contains(HINT));
+        for _ in 0..5 {
+            picker.handle(Key::Down);
+        }
+        let screen = picker.render(8, 20);
+        assert!(screen.contains("row2") && screen.contains("row5"));
+        assert!(!screen.contains("row1") && !screen.contains("row6"));
+        assert!(screen.contains(HINT));
     }
 
     #[test]

@@ -6,10 +6,20 @@ use tx_client::tmux::{Ui, UiError};
 
 pub use tx_client::tmux::{DIM_FG_HEX, FG_HEX};
 
-/// `client`'s terminal width in columns; `None` when there is no such client.
-pub fn client_width(ui: &Ui, client: &str) -> Option<usize> {
-    let (_, out) = ui.quiet(&["display-message", "-p", "-c", client, "#{client_width}"]);
-    out.trim().parse().ok()
+/// `client`'s terminal size, `(columns, rows)`; `None` when there is no such client. Read from
+/// `list-clients`: `display-message -c` expands its formats for whichever client tmux deems
+/// current, not necessarily `client`.
+pub fn client_size(ui: &Ui, client: &str) -> Option<(usize, usize)> {
+    let (_, clients) = ui.quiet(&[
+        "list-clients",
+        "-F",
+        "#{client_name}\t#{client_width}\t#{client_height}",
+    ]);
+    clients.lines().find_map(|line| {
+        let mut fields = line.split('\t');
+        (fields.next()? == client).then_some(())?;
+        Some((fields.next()?.parse().ok()?, fields.next()?.parse().ok()?))
+    })
 }
 
 /// A global server option; `None` when unset or there is no server.
