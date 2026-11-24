@@ -327,6 +327,8 @@ fn what_the_engines_add_is_what_their_programs_report() {
              with a tier (gemini-4-neon-low) and a different effort make agy fall back to high, and max \
              is high on gemini 4 neon\n\
              # antigravity fork copies the conversation with the sqlite3 CLI, which must be on PATH\n\
+             # antigravity runs the Claude models too (claude-opus-5-5), billed per token through \
+             Antigravity: set a Gemini model when agent.model names a Claude one\n\
              # claude adds to every agent's tools: Skill, ToolSearch\n\
              # cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)\n\
              \nskills:"
@@ -373,6 +375,8 @@ fn what_the_engines_add_is_what_their_programs_report() {
              with a tier (gemini-4-neon-low) and a different effort make agy fall back to high, and max \
              is high on gemini 4 neon\n\
              # antigravity fork copies the conversation with the sqlite3 CLI, which must be on PATH\n\
+             # antigravity runs the Claude models too (claude-opus-5-5), billed per token through \
+             Antigravity: set a Gemini model when agent.model names a Claude one\n\
              # claude adds to every agent's tools: Skill, ToolSearch\n\
              # cursor ignores the effort option: pick it with the model id (gpt-5.3-codex-high)\n\
              {mine}:5: warning: bundled skill pdf brings in all bundled skills: pdf, and any \

@@ -101,7 +101,8 @@ transcript and, once the agent ended, the chat's `store.db`; `restore` puts them
 resume. Cursor has no tool switches, and it also runs your `~/.cursor` servers and hooks and the
 Claude Code hooks of `~/.claude/settings.json`; `tx harness check --engine cursor` lists them.
 
-**`engine-antigravity`** runs the Antigravity CLI for Google's Gemini models: `agy
+**`engine-antigravity`** runs the Antigravity CLI for Google's Gemini models (install it with
+`curl -fsSL https://antigravity.google/cli/install.sh | bash`, then run `agy` once to sign in): `agy
 [--conversation ID] [--model M] [--effort E] [--agent tx] --dangerously-skip-permissions
 --settings '{"trustedWorkspaces":["<worktree>"]}' [-i PROMPT]` (agy 1.5.16). The worktree is
 trusted per launch through `--settings`, and nothing is written to agy's settings. agy takes no
@@ -111,14 +112,19 @@ per-run hooks or system prompt, so each launch writes them into the worktree:
   carries the definition's MCP servers.
 - tx's hooks as the workspace plugin `.agents/plugins/tx/`, so a repository's own
   `.agents/hooks.json` is left alone.
-- granted skills as links under `.agents/skills/`.
+- granted skills as copies in that plugin, where agy lists them as `tx:<name>`. agy skips a skill
+  linked from outside the workspace.
 
-agy names the conversation itself, and every hook payload carries its id. agy fires nothing until
-the first prompt, so a resume fires a synthetic `Ready` hook a second after launch. Name a base
-model (`gemini-4-neon`) and let `effort` pick its tier. Escape interrupts a turn.
+agy names the conversation itself, and every hook payload carries its id. The first id is
+recorded and kept. Hooks naming another conversation are ignored, because the agent's subagents
+fire the same hooks; a conversation switched to inside the TUI is not followed either. agy fires
+nothing until the first prompt, so a resume fires a synthetic `Ready` hook a second after
+launch. Name a base
+model (`gemini-4-neon`) and let `effort` pick its tier. agy also runs the Claude models, billed
+per token through Antigravity, so set a Gemini model when `agent.model` names a Claude one. Escape interrupts a turn.
 
 A fork copies the source's conversation database under the new agent's id with the `sqlite3`
-CLI, as agy's own `/fork` does. `archive` keeps the transcript and, once the agent ended, the
+CLI, as agy's own `/fork` does. `archive` keeps the transcript and, once the agent ended, a SQLite backup of the
 conversation's `.db`. `restore` puts them back before a resume.
 
 Some things cannot be kept out of an Antigravity agent. An agent's own MCP servers come only

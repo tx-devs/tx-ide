@@ -11,7 +11,9 @@
 //! - [`PLUGIN_HOOKS`]: tx's hooks in a workspace plugin, so a repository's own
 //!   `.agents/hooks.json` is left alone. Each is `(<hook command> <event>) || true`: agy refuses
 //!   a tool whose `PreToolUse` hook fails, and a tx hook must never block the agent.
-//! - one link per granted skill under [`SKILLS_DIR`].
+//! - a copy of each granted skill under [`PLUGIN_SKILLS_DIR`], so agy lists it as `tx:<name>`.
+//!   agy skips a skill that is a link to a directory outside the workspace, and a copy inside
+//!   tx's own plugin cannot collide with a repository's `.agents/skills`.
 //!
 //! Trust comes per launch through `--settings` and is never written to agy's settings.
 //!
@@ -23,18 +25,23 @@
 //! ```
 //!
 //! agy picks the conversation id itself: every hook payload carries it (`conversationId`,
-//! `transcriptPath`), so the record learns it from the first one. agy fires nothing until the
-//! first prompt (`SessionStart` comes with it, a resume fires none), so a resume is wrapped in a
-//! shell that fires a synthetic [`READY_EVENT`] a second after launch; it takes the agent out of
+//! `transcriptPath`), so the record learns it from the first one and then keeps it. The agent's
+//! subagents fire the same hooks with their own ids, and nothing in a payload tells them apart,
+//! so a hook naming another conversation is ignored; a switch inside the TUI (`/new`, `/resume`,
+//! `/fork`) is not followed either. agy fires nothing until the first prompt (`SessionStart`
+//! comes with it, a resume fires none), so a resume is wrapped in a shell that fires a synthetic
+//! [`READY_EVENT`] a second after launch, while agy still runs; it takes the agent out of
 //! `Starting` and changes nothing later.
 //!
 //! A fork copies the source's conversation database under the new session's id before agy
 //! starts: `sqlite3 <src>.db ".backup <new>.db"`, then the new ids into `trajectory_meta`, as
-//! agy's own `/fork` writes them. The copy runs in the launch's shell, since `fork` is pure.
+//! agy's own `/fork` writes them. The copy runs in the launch's shell, since `fork` is pure; a
+//! failed copy leaves no database behind.
 //!
-//! `archive` keeps the transcript (`<archive>/<id>.jsonl`, by offset) and, once the process is
-//! gone, the conversation database (`<archive>/<id>.db`, with its `-wal` when one is left);
-//! `restore` puts back what is missing before a resume.
+//! `archive` keeps the transcript (`<archive>/<id>.jsonl`, by offset) and, once the agent has
+//! ended, the conversation database (`<archive>/<id>.db`) as one consistent SQLite backup, its
+//! write-ahead log folded in, even while agy is still shutting down; a raw copy without
+//! `sqlite3`. `restore` puts back what is missing before a resume.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -75,7 +82,11 @@ pub const AGENT_FILE: &str = ".agents/agents/tx.md";
 pub const PLUGIN_MANIFEST: &str = ".agents/plugins/tx/plugin.json";
 pub const PLUGIN_HOOKS: &str = ".agents/plugins/tx/hooks.json";
 pub const PLUGIN_NAME: &str = "tx";
-pub const SKILLS_DIR: &str = ".agents/skills";
+pub const PLUGIN_SKILLS_DIR: &str = ".agents/plugins/tx/skills";
+/// The plugin's manifest; a version keeps `agy plugin validate` quiet.
+pub const PLUGIN_VERSION: &str = "1.0.0";
+/// How long a `sqlite3` waits on agy's lock before giving up.
+pub const BUSY_TIMEOUT: &str = ".timeout 5000";
 
 /// The tool set of agy's default agent (1.5.16), less `swarm`, which a built-in plugin adds
 /// to the default agent only. A custom agent gets only the tools it lists,
@@ -114,22 +125,26 @@ const TOOL_EVENTS: [&str; 2] = ["PreToolUse", "PostToolUse"];
 pub const READY_EVENT: &str = "Ready";
 /// The tool through which the model asks the operator a question.
 pub const QUESTION_TOOL: &str = "ask_question";
-/// How long the resume wrapper waits before [`READY_EVENT`]: core saves the record right after
-/// tmux starts the process, and a hook for a record not yet saved is dropped.
+/// How long the resume wrapper waits before [`READY_EVENT`]: about when agy's TUI takes input
+/// (its first status line draws 0.6 s after launch). Core needs no wait: it holds the record's
+/// lock until it is saved, and a hook waits on that lock.
 pub const READY_DELAY_SECONDS: u32 = 1;
 
 /// What `tx harness ls` prints for every agent of this engine; the manifest says the same.
-pub const NOTES: [&str; 2] = [
+pub const NOTES: [&str; 3] = [
     "antigravity: name a base model (gemini-4-neon) and let the effort pick its tier; a model id \
      with a tier (gemini-4-neon-low) and a different effort make agy fall back to high, and max \
      is high on gemini 4 neon",
     "antigravity fork copies the conversation with the sqlite3 CLI, which must be on PATH",
+    "antigravity runs the Claude models too (claude-opus-5-5), billed per token through \
+     Antigravity: set a Gemini model when agent.model names a Claude one",
 ];
 
 /// What every launch carries that no tx option removes (agy 1.5.16).
-pub const FORCED: [&str; 8] = [
+pub const FORCED: [&str; 10] = [
     "Antigravity's default prompt sections and tools: the profile replaces only its persona line, \
-     and every agent gets agy's full default tool set",
+     and every agent gets the default agent's tools but swarm, which agy gives the default agent \
+     only",
     "the user's ~/.gemini/config MCP servers, hooks, skills and plugins, and agy's built-in \
      plugins: an agent's own MCP servers are exposed only alongside the global ones",
     "the user's ~/.gemini/GEMINI.md and the cross-tool skills of ~/.agents/skills",
@@ -140,7 +155,12 @@ pub const FORCED: [&str; 8] = [
      name, and a header naming one is refused",
     "a command the model moves to the background ends its turn; the agent works again on its own \
      when the command finishes",
-    "after tx interrupt, an empty input: the interrupted prompt is not put back",
+    "after tx interrupt, an empty input: the interrupted prompt is not put back; an open \
+     dropdown or banner (\"esc to dismiss\") takes the Escape instead",
+    "the conversation tx launched, kept: one switched to inside the TUI (/new, /resume, /fork) \
+     is not followed, since a subagent's hooks look the same",
+    "granted skills as tx:<name>, copies in tx's plugin; a skill no longer granted stays until \
+     the worktree's .agents/plugins/tx/skills is cleared",
 ];
 
 /// agy's directory, `$HOME/.gemini/antigravity-cli`: conversation databases under
@@ -313,18 +333,90 @@ pub fn agent_file(text: &str, mcp_servers: &[Value]) -> String {
     format!("---\n{}\n---\n{text}\n", frontmatter.join("\n"))
 }
 
-/// One symlink per granted skill dir: `<skills dir>/<skill name>` → the skill dir.
-pub fn skill_links(skill_dirs: &[PathBuf]) -> Vec<WorkspaceAction> {
-    skill_dirs
-        .iter()
-        .filter_map(|dir| {
-            let name = dir.file_name()?;
-            Some(WorkspaceAction::Symlink {
-                src: dir.clone(),
-                dst: PathBuf::from(SKILLS_DIR).join(name),
-            })
-        })
-        .collect()
+/// A copy of every file of each granted skill dir under `<plugin skills dir>/<skill name>/`.
+/// A skill file that is not UTF-8 text is refused: a workspace write carries text.
+pub fn skill_files(skill_dirs: &[PathBuf]) -> Result<Vec<WorkspaceAction>, EngineError> {
+    let mut actions = Vec::new();
+    for dir in skill_dirs {
+        let Some(name) = dir.file_name() else {
+            continue;
+        };
+        copy_tree(
+            dir,
+            &PathBuf::from(PLUGIN_SKILLS_DIR).join(name),
+            &mut actions,
+        )?;
+    }
+    Ok(actions)
+}
+
+fn copy_tree(
+    source: &Path,
+    destination: &Path,
+    actions: &mut Vec<WorkspaceAction>,
+) -> Result<(), EngineError> {
+    let io = |path: &Path| {
+        let path = path.to_path_buf();
+        move |source| EngineError::Io { path, source }
+    };
+    for entry in std::fs::read_dir(source).map_err(io(source))? {
+        let path = entry.map_err(io(source))?.path();
+        let target = destination.join(path.file_name().unwrap_or_default());
+        if path.is_dir() {
+            copy_tree(&path, &target, actions)?;
+        } else {
+            let content = std::fs::read_to_string(&path).map_err(io(&path))?;
+            actions.push(WorkspaceAction::Write {
+                path: target,
+                content,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// `.backup "<path>"`, quoted for SQLite's dot-command parser.
+pub fn backup_command(destination: &Path) -> String {
+    let path = destination
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    format!(".backup \"{path}\"")
+}
+
+/// A consistent copy of the live database at `destination` through SQLite's online backup,
+/// written beside it and renamed into place; a raw copy when `sqlite3` is not installed.
+fn backup_database(live: &Path, destination: &Path) -> Result<(), EngineError> {
+    let io = |path: &Path| {
+        let path = path.to_path_buf();
+        move |source| EngineError::Io { path, source }
+    };
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent).map_err(io(parent))?;
+    }
+    let partial = PathBuf::from(format!("{}.partial", destination.to_string_lossy()));
+    let output = std::process::Command::new(SQLITE_BIN)
+        .args(["-cmd", BUSY_TIMEOUT])
+        .arg(live)
+        .arg(backup_command(&partial))
+        .output();
+    match output {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            mirror_file_exact(live, destination)
+        }
+        Err(source) => Err(EngineError::Io {
+            path: live.to_path_buf(),
+            source,
+        }),
+        Ok(output) if !output.status.success() => Err(EngineError::Io {
+            path: live.to_path_buf(),
+            source: std::io::Error::other(format!(
+                "{SQLITE_BIN} backup failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            )),
+        }),
+        Ok(_) => std::fs::rename(&partial, destination).map_err(io(destination)),
+    }
 }
 
 /// `--settings` for one launch: trust the worktree, without the dialog and without writing it.
@@ -435,28 +527,40 @@ impl AntigravityAdapter {
         if !prompt.is_empty() {
             args.extend([PROMPT_FLAG.to_owned(), prompt.to_owned()]);
         }
-        if !request.hook_command.is_empty() {
+        let skills = skill_files(request.profile.skill_dirs())?;
+        if !request.hook_command.is_empty() || !skills.is_empty() {
             workspace.push(WorkspaceAction::Write {
                 path: PLUGIN_MANIFEST.into(),
-                content: serde_json::json!({ "name": PLUGIN_NAME }).to_string(),
+                content: serde_json::json!({ "name": PLUGIN_NAME, "version": PLUGIN_VERSION })
+                    .to_string(),
             });
+        }
+        if !request.hook_command.is_empty() {
             workspace.push(WorkspaceAction::Write {
                 path: PLUGIN_HOOKS.into(),
                 content: hooks_file(request.hook_command),
             });
         }
-        workspace.extend(skill_links(request.profile.skill_dirs()));
+        workspace.extend(skills);
         let program = option(COMMAND_KEY).unwrap_or(AGY_BIN).to_owned();
         Ok((program, args, workspace))
     }
 
-    /// The conversation recorded for `session` and its transcript path.
-    fn recorded_conversation<'a>(&self, session: &'a Agent) -> Option<(&'a str, &'a Path)> {
-        let data = engine_data(self, session);
-        Some((
-            data.get(CONVERSATION_ID_KEY)?.as_str()?,
-            Path::new(data.get(TRANSCRIPT_PATH_KEY)?.as_str()?),
-        ))
+    /// The conversation recorded for `session`.
+    fn recorded_conversation<'a>(&self, session: &'a Agent) -> Option<&'a str> {
+        engine_data(self, session)
+            .get(CONVERSATION_ID_KEY)?
+            .as_str()
+            .filter(|conversation| !conversation.is_empty())
+    }
+
+    /// The transcript recorded for `session`, else where agy keeps `conversation`'s.
+    fn recorded_transcript(&self, session: &Agent, conversation: &str) -> PathBuf {
+        engine_data(self, session)
+            .get(TRANSCRIPT_PATH_KEY)
+            .and_then(Value::as_str)
+            .filter(|transcript| !transcript.is_empty())
+            .map_or_else(|| self.transcript_path(conversation), PathBuf::from)
     }
 }
 
@@ -534,7 +638,7 @@ impl LlmEngine for AntigravityAdapter {
     /// `--conversation <id>`, wrapped to fire [`READY_EVENT`]: a resume fires no hook until the
     /// operator types.
     fn resume(&self, request: &LaunchRequest<'_>) -> Result<LaunchPlan, EngineError> {
-        let Some((conversation, _)) = self.recorded_conversation(request.session) else {
+        let Some(conversation) = self.recorded_conversation(request.session) else {
             return Err(EngineError::Refused(format!(
                 "antigravity cannot resume {}: no conversation recorded (ext.{EXT_KEY}.{CONVERSATION_ID_KEY})",
                 request.session.name
@@ -545,8 +649,10 @@ impl LlmEngine for AntigravityAdapter {
         if request.hook_command.is_empty() {
             return Ok(plan_with(workspace, LaunchPlan::new(program).args(args)));
         }
+        // `$$` is the shell that execs agy, so `kill -0` says agy still runs.
         let script = format!(
-            "(sleep {READY_DELAY_SECONDS}; {}) </dev/null >/dev/null 2>&1 & exec \"$@\"",
+            "(sleep {READY_DELAY_SECONDS}; kill -0 $$ && {}) </dev/null >/dev/null 2>&1 & \
+             exec \"$@\"",
             hook_shell_command(request.hook_command, READY_EVENT)
         );
         Ok(plan_with(
@@ -564,7 +670,7 @@ impl LlmEngine for AntigravityAdapter {
         source: &Agent,
         prompt: &str,
     ) -> Result<LaunchPlan, EngineError> {
-        let Some((source_conversation, _)) = self.recorded_conversation(source) else {
+        let Some(source_conversation) = self.recorded_conversation(source) else {
             return Err(EngineError::Refused(format!(
                 "antigravity cannot fork {}: no conversation recorded (ext.{EXT_KEY}.{CONVERSATION_ID_KEY})",
                 source.name
@@ -574,18 +680,21 @@ impl LlmEngine for AntigravityAdapter {
         let trajectory = uuid::Uuid::new_v4().to_string();
         let args = vec![CONVERSATION_FLAG.to_owned(), conversation.clone()];
         let (program, args, workspace) = self.command_line(request, args, prompt)?;
+        // $1 source database, $2 the backup command writing $3, the new database; $4 and $5 the
+        // new conversation and trajectory ids (uuids). A failed step removes the new database.
         let script = format!(
-            "test -f \"$1\" && {SQLITE_BIN} \"$1\" \".backup '$2'\" && {SQLITE_BIN} \"$2\" \
-             \"UPDATE trajectory_meta SET cascade_id='$3', trajectory_id='$4'\" && shift 4 && \
-             exec \"$@\""
+            "if test -f \"$1\" && {SQLITE_BIN} -cmd '{BUSY_TIMEOUT}' \"$1\" \"$2\" && \
+             {SQLITE_BIN} -cmd '{BUSY_TIMEOUT}' \"$3\" \"UPDATE trajectory_meta SET \
+             cascade_id='$4', trajectory_id='$5'\"; then shift 5; exec \"$@\"; fi; \
+             rm -f \"$3\"; echo \"tx: antigravity could not copy conversation $1\" >&2; exit 1"
         );
+        let database = self.database_path(&conversation);
         let arguments = vec![
             self.database_path(source_conversation)
                 .to_string_lossy()
                 .into_owned(),
-            self.database_path(&conversation)
-                .to_string_lossy()
-                .into_owned(),
+            backup_command(&database),
+            database.to_string_lossy().into_owned(),
             conversation.clone(),
             trajectory,
         ];
@@ -607,9 +716,20 @@ impl LlmEngine for AntigravityAdapter {
     /// `SessionStart` fires with the first prompt, right before its `PreInvocation`, so it says
     /// nothing of the state. The model's question (`PreToolUse` of [`QUESTION_TOOL`]) waits on
     /// the operator until its `PostToolUse`. [`READY_EVENT`] only ends `Starting`. Every payload
-    /// names the conversation, which is recorded when it changes (a resume, `/fork` or
-    /// `/resume` inside the TUI).
+    /// names its conversation: the first is recorded, and a hook naming another (a subagent's)
+    /// changes nothing.
     fn on_hook(&self, session: &Agent, hook: &LlmEngineHook) -> LlmEngineChange {
+        let conversation = hook
+            .payload
+            .get("conversationId")
+            .and_then(Value::as_str)
+            .filter(|conversation| !conversation.is_empty());
+        let recorded = self.recorded_conversation(session);
+        if let (Some(conversation), Some(recorded)) = (conversation, recorded)
+            && conversation != recorded
+        {
+            return LlmEngineChange::NONE;
+        }
         let change = match hook.name.as_str() {
             "PreInvocation" | "PostInvocation" | "PostToolUse" => {
                 LlmEngineChange::to(LlmEngineState::Working)
@@ -631,17 +751,16 @@ impl LlmEngine for AntigravityAdapter {
             }
             _ => LlmEngineChange::NONE,
         };
-        let engine_data = hook
-            .payload
-            .get("conversationId")
-            .and_then(Value::as_str)
-            .and_then(|conversation| {
-                self.with_conversation(
-                    engine_data(self, session),
-                    conversation,
-                    hook.payload.get("transcriptPath").and_then(Value::as_str),
-                )
-            });
+        let engine_data = conversation.and_then(|conversation| {
+            self.with_conversation(
+                engine_data(self, session),
+                conversation,
+                hook.payload
+                    .get("transcriptPath")
+                    .and_then(Value::as_str)
+                    .filter(|transcript| !transcript.is_empty()),
+            )
+        });
         LlmEngineChange {
             engine_data,
             ..change
@@ -649,58 +768,60 @@ impl LlmEngine for AntigravityAdapter {
     }
 
     /// The transcript by offset while the process lives, compared whole once it is gone; the
-    /// conversation database (and a `-wal` left beside it) only then.
+    /// conversation database, as one SQLite backup, only then.
     fn archive(&self, session: &Agent, archive_directory: &Path) -> Result<(), EngineError> {
-        let Some((conversation, transcript)) = self.recorded_conversation(session) else {
+        let Some(conversation) = self.recorded_conversation(session) else {
             return Ok(());
         };
+        let transcript = self.recorded_transcript(session, conversation);
         let ended = session.state == LlmEngineState::Ended;
         if transcript.is_file() {
             let archived = archive_directory.join(format!("{conversation}.jsonl"));
             if ended {
-                mirror_file_exact(transcript, &archived)?;
+                mirror_file_exact(&transcript, &archived)?;
             } else {
-                mirror_file(transcript, &archived)?;
+                mirror_file(&transcript, &archived)?;
             }
         }
-        if !ended {
-            return Ok(());
-        }
-        for (live, archived) in database_files(
-            &self.database_path(conversation),
-            archive_directory,
-            conversation,
-        ) {
-            if live.is_file() {
-                mirror_file_exact(&live, &archived)?;
-            }
+        let database = self.database_path(conversation);
+        if ended && database.is_file() {
+            backup_database(
+                &database,
+                &archive_directory.join(format!("{conversation}.db")),
+            )?;
         }
         Ok(())
     }
 
-    /// The database when it is gone, and the transcript when it is gone, from the archive; a
-    /// live conversation is never touched.
+    /// The database when it is gone (and any write-ahead files left beside it), and the
+    /// transcript when it is gone, from the archive; a live conversation is never touched.
     fn restore(&self, session: &Agent, archive_directory: &Path) -> Result<bool, EngineError> {
-        let Some((conversation, transcript)) = self.recorded_conversation(session) else {
+        let Some(conversation) = self.recorded_conversation(session) else {
             return Ok(false);
         };
         let database = self.database_path(conversation);
+        let archived_database = archive_directory.join(format!("{conversation}.db"));
         let mut restored = false;
-        if !database.exists()
-            && archive_directory
-                .join(format!("{conversation}.db"))
-                .is_file()
-        {
-            for (live, archived) in database_files(&database, archive_directory, conversation) {
-                if archived.is_file() {
-                    mirror_file_exact(&archived, &live)?;
+        if !database.exists() && archived_database.is_file() {
+            for suffix in ["-wal", "-shm"] {
+                let stale = PathBuf::from(format!("{}{suffix}", database.to_string_lossy()));
+                match std::fs::remove_file(&stale) {
+                    Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                        return Err(EngineError::Io {
+                            path: stale,
+                            source: error,
+                        });
+                    }
+                    _ => {}
                 }
             }
+            mirror_file_exact(&archived_database, &database)?;
             restored = true;
         }
+        let transcript = self.recorded_transcript(session, conversation);
         let archived_transcript = archive_directory.join(format!("{conversation}.jsonl"));
         if archived_transcript.is_file() && !transcript.exists() {
-            mirror_file_exact(&archived_transcript, transcript)?;
+            mirror_file_exact(&archived_transcript, &transcript)?;
             restored = true;
         }
         Ok(restored)
@@ -713,25 +834,6 @@ impl LlmEngine for AntigravityAdapter {
     fn check(&self, request: &DefinitionsRequest<'_>) -> Result<EngineCheck, EngineError> {
         Ok(check_report(request))
     }
-}
-
-/// The database and its `-wal`, live path beside archived path.
-fn database_files(
-    database: &Path,
-    archive_directory: &Path,
-    conversation: &str,
-) -> [(PathBuf, PathBuf); 2] {
-    let wal = PathBuf::from(format!("{}-wal", database.to_string_lossy()));
-    [
-        (
-            database.to_path_buf(),
-            archive_directory.join(format!("{conversation}.db")),
-        ),
-        (
-            wal,
-            archive_directory.join(format!("{conversation}.db-wal")),
-        ),
-    ]
 }
 
 /// What one agent definition gets on Antigravity that its file does not say.
