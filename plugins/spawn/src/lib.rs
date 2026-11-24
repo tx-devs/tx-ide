@@ -3,7 +3,8 @@
 //! agent's name, tags, project, prompt, engine, model, effort and agent definition;
 //! `_new-agent` then creates the agent session and reports on the firing client's status line.
 //!
-//! The project is the firing pane's directory (the poc has no projects config). The agents are
+//! The project is the firing pane's directory (the poc has no projects config). The engines are
+//! the active ones, each offering the models and efforts its plugin declares. The agents are
 //! the agent definitions (`tx harness ls agents`), the configured default (`agent.definition`)
 //! preselected; each brings its own prompt, tools, skills and roles.
 
@@ -17,35 +18,18 @@ use serde_json::{Map, Value, json};
 use tx_client::tmux::Ui;
 use tx_core::harness::{Harness, HarnessError};
 use tx_core::{
-    CreateOptions, DefinitionChoice, EngineKind, LaunchOptions, Plugin, PluginError, Registry,
-    TxCore, Verb, VerbError, VerbIo,
+    CreateOptions, DefinitionChoice, EngineKind, LaunchOptions, LlmEngine, Plugin, PluginError,
+    Registry, TxCore, Verb, VerbError, VerbIo,
 };
 
 pub const PLUGIN_ID: &str = "spawn";
 pub const DEFAULT_TAG: &str = "agent";
-/// Preselected effort; every engine listed in [`EFFORTS`] accepts it.
+/// Preselected effort, when the engine offers it; else its first.
 pub const DEFAULT_EFFORT: &str = "high";
+/// What an engine that declares no models (or no efforts) offers: the pick that passes no
+/// `model` (or `effort`) option.
+pub const UNSET: &str = "default";
 const TAGS_HELP: &str = "Comma-separated (default: agent)";
-/// Each engine's models, the one it runs without `--model` first (preselected, passed as no
-/// `--model`). An engine missing here offers `default` alone.
-const MODELS: &[(&str, &[&str])] = &[
-    ("claude", &["fable", "opus", "sonnet", "haiku"]),
-    (
-        "codex",
-        &["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"],
-    ),
-];
-const FALLBACK_MODELS: &[&str] = &["default"];
-/// Each engine's effort tiers, as its own `Effort` names them (the engine validates the pick
-/// at create). An engine missing here offers the Claude list.
-const EFFORTS: &[(&str, &[&str])] = &[
-    ("claude", &["low", "medium", "high", "xhigh", "max"]),
-    (
-        "codex",
-        &["none", "minimal", "low", "medium", "high", "xhigh", "max"],
-    ),
-];
-const FALLBACK_EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 const FORM_MODULE: &str = "tx-new-agent";
 const FORM: &[u8] = include_bytes!("../nvim/tx-new-agent.lua");
 const SPEC_ENV: &str = "TX_NEW_AGENT_SPEC";
@@ -96,42 +80,59 @@ pub fn pane_project(path: &str) -> (String, String) {
     (name.to_owned(), path.to_owned())
 }
 
-/// The first model listed for `engine`: what it runs without `--model`.
-pub fn default_model(engine: &str) -> &'static str {
-    models_for(engine)[0]
+/// What the form offers of one engine, as its plugin declares it: the models, the one the CLI
+/// runs without `--model` first, and the efforts; [`UNSET`] alone for a list it leaves empty.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EngineOffer {
+    pub kind: EngineKind,
+    pub models: Vec<String>,
+    pub efforts: Vec<String>,
 }
 
-fn models_for(engine: &str) -> &'static [&'static str] {
-    MODELS
-        .iter()
-        .find(|(name, _)| *name == engine)
-        .map_or(FALLBACK_MODELS, |(_, models)| models)
-}
+impl EngineOffer {
+    pub fn of(engine: &dyn LlmEngine) -> Self {
+        let or_unset = |list: Vec<String>| {
+            if list.is_empty() {
+                vec![UNSET.to_owned()]
+            } else {
+                list
+            }
+        };
+        Self {
+            kind: engine.kind(),
+            models: or_unset(engine.models()),
+            efforts: or_unset(engine.efforts()),
+        }
+    }
 
-fn efforts_for(engine: &str) -> &'static [&'static str] {
-    EFFORTS
-        .iter()
-        .find(|(name, _)| *name == engine)
-        .map_or(FALLBACK_EFFORTS, |(_, efforts)| efforts)
+    /// [`DEFAULT_EFFORT`] when offered, else the first.
+    fn preselected_effort(&self) -> &str {
+        self.efforts
+            .iter()
+            .find(|effort| *effort == DEFAULT_EFFORT)
+            .unwrap_or(&self.efforts[0])
+    }
 }
 
 /// The form's spec: the one project, the engines, each one's models (its default first) and
-/// efforts, the agents, and what is preselected (the agent: `default_agent` when offered, else
-/// the first); `result` is where the answers go.
+/// efforts, the agents, and what is preselected (the first engine; its effort: high when
+/// offered, else its first; the agent: `default_agent` when offered, else the first); `result`
+/// is where the answers go.
 pub fn form_spec(
     result: &Path,
     agents: &[String],
     default_agent: Option<&str>,
     project: (&str, &str),
-    engines: &[&str],
+    engines: &[EngineOffer],
 ) -> Value {
+    let kinds: Vec<&str> = engines.iter().map(|engine| engine.kind.as_str()).collect();
     let models: Map<String, Value> = engines
         .iter()
-        .map(|engine| ((*engine).to_owned(), json!(models_for(engine))))
+        .map(|engine| (engine.kind.to_string(), json!(engine.models)))
         .collect();
     let efforts: Map<String, Value> = engines
         .iter()
-        .map(|engine| ((*engine).to_owned(), json!(efforts_for(engine))))
+        .map(|engine| (engine.kind.to_string(), json!(engine.efforts)))
         .collect();
     let agent = default_agent
         .filter(|agent| agents.iter().any(|offered| offered == agent))
@@ -143,11 +144,11 @@ pub fn form_spec(
         "projects": [project_name],
         "project_paths": { project_name: project_path },
         "project": project_name,
-        "engines": engines,
+        "engines": kinds,
         "models": models,
         "efforts": efforts,
-        "engine": engines[0],
-        "effort": DEFAULT_EFFORT,
+        "engine": kinds[0],
+        "effort": engines[0].preselected_effort(),
         "agents": agents,
         "agent": agent,
         "tags_hint": TAGS_HELP,
@@ -170,15 +171,17 @@ pub fn tags_of(tags: &str) -> Vec<String> {
 }
 
 /// The session the answers describe: the picked agent definition (which brings its roles), the
-/// model only when it is not the engine's default. The engine validates the options when the
-/// session is created.
-pub fn create_options(reply: &Reply) -> CreateOptions {
+/// model only when it is not the engine's default (the first `offer` lists), the effort only
+/// when it is not [`UNSET`]. The engine validates the options when the session is created.
+pub fn create_options(reply: &Reply, offer: &EngineOffer) -> CreateOptions {
     let mut launch = LaunchOptions::agent(reply.engine)
         .definition(DefinitionChoice::new(&reply.agent))
-        .option("effort", reply.effort.as_str())
         .initial_prompt(&reply.prompt);
-    if reply.model != default_model(reply.engine.as_str()) {
+    if reply.model != offer.models[0] {
         launch = launch.option("model", reply.model.as_str());
+    }
+    if reply.effort != UNSET {
+        launch = launch.option("effort", reply.effort.as_str());
     }
     CreateOptions::new(&reply.name, &reply.cwd, launch).tags(tags_of(&reply.tags))
 }
@@ -259,8 +262,12 @@ impl Verb for NewAgent {
             })
             .unwrap_or_else(|| "/".to_owned());
         let (project_name, project_path) = pane_project(&path);
-        let kinds = core.engine_kinds();
-        let engines: Vec<&str> = kinds.iter().map(|kind| kind.as_str()).collect();
+        let engines: Vec<EngineOffer> = core
+            .engine_kinds()
+            .into_iter()
+            .filter_map(|kind| core.engine(kind))
+            .map(EngineOffer::of)
+            .collect();
         if engines.is_empty() {
             ui.display_status(client, "prefix+n: no engine plugin is active");
             return Ok(1);
@@ -291,8 +298,12 @@ impl Verb for NewAgent {
             return Ok(0);
         };
         // The agent may get `<name>-2` when the name is taken: say what it is really called.
+        let offer = engines
+            .iter()
+            .find(|offer| offer.kind == reply.engine)
+            .expect("the form answers one of the engines it offered");
         let created = core
-            .create_agent(create_options(&reply))
+            .create_agent(create_options(&reply, offer))
             .and_then(|id| core.get_agent(&id));
         match created {
             Ok(session) => {
@@ -309,7 +320,109 @@ impl Verb for NewAgent {
 
 #[cfg(test)]
 mod tests {
+    use tx_core::{Agent, EngineError, LaunchPlan, LaunchRequest, LlmEngineChange, LlmEngineHook};
+
     use super::*;
+
+    /// An engine that declares `models` and `efforts`, and is never launched.
+    struct Declaring {
+        models: &'static [&'static str],
+        efforts: &'static [&'static str],
+    }
+
+    impl LlmEngine for Declaring {
+        fn kind(&self) -> EngineKind {
+            "aider".parse().unwrap()
+        }
+
+        fn ext_key(&self) -> &str {
+            "aider"
+        }
+
+        fn configure(&self, _: &Agent, _: &Value) -> Result<Value, EngineError> {
+            unreachable!()
+        }
+
+        fn start(&self, _: &LaunchRequest<'_>, _: &str) -> Result<LaunchPlan, EngineError> {
+            unreachable!()
+        }
+
+        fn fork(
+            &self,
+            _: &LaunchRequest<'_>,
+            _: &Agent,
+            _: &str,
+        ) -> Result<LaunchPlan, EngineError> {
+            unreachable!()
+        }
+
+        fn resume(&self, _: &LaunchRequest<'_>) -> Result<LaunchPlan, EngineError> {
+            unreachable!()
+        }
+
+        fn on_hook(&self, _: &Agent, _: &LlmEngineHook) -> LlmEngineChange {
+            unreachable!()
+        }
+
+        fn models(&self) -> Vec<String> {
+            self.models
+                .iter()
+                .map(|model| (*model).to_owned())
+                .collect()
+        }
+
+        fn efforts(&self) -> Vec<String> {
+            self.efforts
+                .iter()
+                .map(|effort| (*effort).to_owned())
+                .collect()
+        }
+    }
+
+    fn offer(kind: EngineKind, models: &[&str], efforts: &[&str]) -> EngineOffer {
+        let owned = |list: &[&str]| list.iter().map(|item| (*item).to_owned()).collect();
+        EngineOffer {
+            kind,
+            models: owned(models),
+            efforts: owned(efforts),
+        }
+    }
+
+    fn claude() -> EngineOffer {
+        offer(
+            EngineKind::CLAUDE,
+            &["fable", "opus"],
+            &["low", "medium", "high", "xhigh", "max"],
+        )
+    }
+
+    fn codex() -> EngineOffer {
+        offer(
+            EngineKind::CODEX,
+            &["gpt-6-astra", "gpt-6-sol"],
+            &["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        )
+    }
+
+    #[test]
+    fn an_engine_offers_what_it_declares_and_default_for_what_it_does_not() {
+        let declaring = Declaring {
+            models: &["big", "small"],
+            efforts: &["low", "max"],
+        };
+        assert_eq!(
+            EngineOffer::of(&declaring),
+            offer("aider".parse().unwrap(), &["big", "small"], &["low", "max"])
+        );
+        let silent = Declaring {
+            models: &[],
+            efforts: &[],
+        };
+        assert_eq!(
+            EngineOffer::of(&silent),
+            offer("aider".parse().unwrap(), &[UNSET], &[UNSET])
+        );
+    }
 
     fn reply() -> Reply {
         Reply {
@@ -332,7 +445,11 @@ mod tests {
             &agents,
             Some("developer"),
             ("web", "/srv/web"),
-            &["claude", "codex", "aider"],
+            &[
+                claude(),
+                codex(),
+                offer("aider".parse().unwrap(), &[UNSET], &[UNSET]),
+            ],
         );
         assert_eq!(spec["result"], "/t/answers.json");
         assert_eq!(spec["projects"], json!(["web"]));
@@ -341,16 +458,13 @@ mod tests {
         assert_eq!(spec["engines"], json!(["claude", "codex", "aider"]));
         assert_eq!(spec["engine"], "claude");
         assert_eq!(spec["models"]["claude"][0], "fable");
+        assert_eq!(spec["models"]["codex"], json!(["gpt-6-astra", "gpt-6-sol"]));
         assert_eq!(spec["models"]["aider"], json!(["default"]));
-        assert_eq!(
-            spec["efforts"]["claude"],
-            json!(["low", "medium", "high", "xhigh", "max"])
-        );
         assert_eq!(
             spec["efforts"]["codex"],
             json!(["none", "minimal", "low", "medium", "high", "xhigh", "max"])
         );
-        assert_eq!(spec["efforts"]["aider"], spec["efforts"]["claude"]);
+        assert_eq!(spec["efforts"]["aider"], json!(["default"]));
         assert_eq!(spec["effort"], "high");
         assert_eq!(spec["agents"], json!(["claude", "developer", "qa"]));
         assert_eq!(spec["agent"], "developer");
@@ -361,10 +475,22 @@ mod tests {
                 &agents,
                 default,
                 ("web", "/srv/web"),
-                &["claude"],
+                &[claude()],
             );
             assert_eq!(spec["agent"], "claude", "{default:?}");
         }
+        // A first engine without high preselects its first effort.
+        let spec = form_spec(
+            Path::new("/t/answers.json"),
+            &agents,
+            None,
+            ("web", "/srv/web"),
+            &[
+                offer(EngineKind::CODEX, &["gpt-6-astra"], &["low", "max"]),
+                claude(),
+            ],
+        );
+        assert_eq!(spec["effort"], "low");
     }
 
     #[test]
@@ -408,7 +534,7 @@ mod tests {
 
     #[test]
     fn the_answers_become_an_agent_session_of_the_picked_definition() {
-        let options = create_options(&reply());
+        let options = create_options(&reply(), &codex());
         assert_eq!(options.name, "health");
         assert_eq!(options.cwd, PathBuf::from("/p/my proj"));
         assert_eq!(options.tags, ["tutor", "api"]);
@@ -437,12 +563,28 @@ mod tests {
             tags: String::new(),
             ..reply()
         };
-        let options = create_options(&defaults);
+        let options = create_options(&defaults, &codex());
         assert_eq!(options.tags, [DEFAULT_TAG]);
         let LaunchOptions::Agent { options, .. } = options.launch else {
             panic!("an agent launch");
         };
         assert_eq!(options, json!({"effort": "xhigh"}));
+    }
+
+    /// An engine that declares no models or efforts gets neither option.
+    #[test]
+    fn the_unset_picks_pass_nothing() {
+        let unset = Reply {
+            engine: "aider".parse().unwrap(),
+            model: UNSET.into(),
+            effort: UNSET.into(),
+            ..reply()
+        };
+        let offer = offer("aider".parse().unwrap(), &[UNSET], &[UNSET]);
+        let LaunchOptions::Agent { options, .. } = create_options(&unset, &offer).launch else {
+            panic!("an agent launch");
+        };
+        assert_eq!(options, json!({}));
     }
 
     /// The engine, not the form, decides what an effort may be: a bad one is passed through
@@ -453,7 +595,7 @@ mod tests {
             effort: "7".into(),
             ..reply()
         };
-        let LaunchOptions::Agent { options, .. } = create_options(&bad).launch else {
+        let LaunchOptions::Agent { options, .. } = create_options(&bad, &codex()).launch else {
             panic!("an agent launch");
         };
         assert_eq!(options["effort"], "7");

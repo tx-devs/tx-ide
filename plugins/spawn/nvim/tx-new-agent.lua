@@ -8,8 +8,9 @@
 --            engines = { … }, models = { [engine] = { … } }, efforts = { [engine] = { … } },
 --            engine, effort, agents = { … }, agent, tags_hint }
 --
--- spec.project is preselected among the projects (the answers carry its path as cwd). Each model
--- list starts with the engine's default, which is what the form preselects; the agents are the
+-- spec.project is preselected among the projects (the answers carry its path as cwd). Each
+-- engine's models and efforts are what its plugin declares, `default` alone when it declares
+-- none; each model list starts with the engine's default, which is what the form preselects; the agents are the
 -- harness's agent definitions, and spec.agent (the configured default) is preselected.
 --
 -- Panels: [1] Name  [2] Tags  [3] Project  [4] Prompt  [5] Engine  [6] Model  [7] Effort
@@ -270,7 +271,8 @@ function M.open()
     end
   end
 
-  -- The cursor line is the pick; a new engine keeps the model and effort it offers, else its first.
+  -- The cursor line is the pick; a new engine keeps the model and effort it offers, else the
+  -- spec's (the effort) when offered, else its first.
   local function pick_at_cursor(panel)
     local line = vim.api.nvim_win_get_cursor(panel.window)[1]
     local option = options(panel.key)[line]
@@ -281,7 +283,7 @@ function M.open()
     if panel.key == "engine" then
       for _, key in ipairs({ "model", "effort" }) do
         if not vim.tbl_contains(options(key), picked[key]) then
-          picked[key] = options(key)[1]
+          picked[key] = vim.tbl_contains(options(key), spec[key]) and spec[key] or options(key)[1]
         end
       end
       render_list(panel_for("model"))
