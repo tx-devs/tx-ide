@@ -308,6 +308,9 @@ mod tests {
             mark("3", "$3", "gamma", Need::Finished, 30.0),
         ];
         let bar = format_bar(&finished_overflow);
-        assert!(bar.contains("▲ alpha") && bar.contains("○ beta") && bar.contains("○ +1"), "{bar}");
+        assert!(
+            bar.contains("▲ alpha") && bar.contains("○ beta") && bar.contains("○ +1"),
+            "{bar}"
+        );
     }
 }

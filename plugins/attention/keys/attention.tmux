@@ -34,14 +34,23 @@ trap 'rm -f "$CONF"' EXIT
 # that showed it before is selected again; client-focus-in covers the first selection of a
 # pane whose nested attach was started while another pane had the focus.
 REFRESH="run-shell -b \"$TX attention _refresh >/dev/null 2>&1 || true\""
-SEEN="if -F '#{m:finished *,#{@tx-attention}}' 'set -u @tx-attention ; $REFRESH'"
 
 cat >>"$CONF" <<EOF2
 bind Space run-shell -b "$TX attention next '#{client_name}' >/dev/null 2>&1 || true"
 set -g status-left-length 80
 set -g status-left "#[bold]#{@tx-mark}#[default] #{E:@tx-attention-bar}"
-set-hook -g pane-focus-in "$SEEN"
-set-hook -g client-focus-in "$SEEN"
+set-hook -g pane-focus-in {
+  if -F '#{m:finished *,#{@tx-attention}}' {
+    set -u @tx-attention
+    $REFRESH
+  }
+}
+set-hook -g client-focus-in {
+  if -F '#{m:finished *,#{@tx-attention}}' {
+    set -u @tx-attention
+    $REFRESH
+  }
+}
 $REFRESH
 EOF2
 
