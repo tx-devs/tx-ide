@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["tx-core", "plugins/attention", "plugins/engine-claude", "plugins/engine-codex", "plugins/engine-cursor", "plugins/engine-antigravity", "plugins/chat", "plugins/ide", "plugins/labels", "plugins/kill", "plugins/picker", "plugins/edit", "plugins/spawn", "plugins/assistant", "plugins/mockup", "plugins/tutor", "plugins/artifacts", "plugins/tour", "plugins/timeline", "plugins/board", "plugins/switch", "plugins/graph", "plugins/home", "plugins/home-backdrop", "plugins/home-themes", "plugins/layouts", "plugins/setup", "tx-client"]
+members = ["tx-core", "plugins/attention", "plugins/engine-claude", "plugins/engine-codex", "plugins/engine-cursor", "plugins/engine-antigravity", "plugins/chat", "plugins/ide", "plugins/labels", "plugins/kill", "plugins/picker", "plugins/edit", "plugins/spawn", "plugins/assistant", "plugins/mockup", "plugins/tutor", "plugins/artifacts", "plugins/tour", "plugins/timeline", "plugins/board", "plugins/switch", "plugins/keymap", "plugins/graph", "plugins/home", "plugins/home-backdrop", "plugins/home-themes", "plugins/layouts", "plugins/setup", "tx-client"]
 
 [workspace.package]
 version = "0.1.0"

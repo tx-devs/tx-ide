@@ -40,7 +40,7 @@ set-hook -g after-new-window "if-shell -F '#{@tx-view}' 'setw pane-border-status
 EOF2
 
 cat >>"$CONF" <<EOF2
-bind s {
+bind -N "Switch session" s {
   run-shell "$TX _relabel"
   choose-tree -Zs -F '#{?session_format,#{?@tx-name,#{@tx-name}  ,}#{session_windows}w#{?session_attached, (attached),},#{?window_format,#{window_index}: #{window_name},#{pane_current_command}}}'
 }

@@ -23,7 +23,7 @@ CONF=$(mktemp -t tx-home-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind m run-shell -b "$TX _home-open '#{pane_id}' '#{client_name}' >/dev/null 2>&1 || true"
+bind -N "tx home" m run-shell -b "$TX _home-open '#{pane_id}' '#{client_name}' >/dev/null 2>&1 || true"
 EOF2
 
 tmux source-file "$CONF"

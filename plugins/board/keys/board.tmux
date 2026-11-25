@@ -22,7 +22,7 @@ CONF=$(mktemp -t tx-board-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind b run-shell -b "$TX _board-open '#{pane_id}' '#{client_name}' '#{pane_current_path}' >/dev/null 2>&1 || true"
+bind -N "GitHub issue board" b run-shell -b "$TX _board-open '#{pane_id}' '#{client_name}' '#{pane_current_path}' >/dev/null 2>&1 || true"
 EOF2
 
 tmux source-file "$CONF"

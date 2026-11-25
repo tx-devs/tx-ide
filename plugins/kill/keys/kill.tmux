@@ -15,7 +15,7 @@ CONF=$(mktemp -t tx-kill-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind X run-shell "$DATA/bin/tmux-kill-tx-session '#{pane_id}' '#{session_name}'"
+bind -N "Close the agent or view in this pane" X run-shell "$DATA/bin/tmux-kill-tx-session '#{pane_id}' '#{session_name}'"
 EOF2
 
 tmux source-file "$CONF"

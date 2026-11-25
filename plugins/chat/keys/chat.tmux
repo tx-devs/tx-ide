@@ -15,7 +15,7 @@ CONF=$(mktemp -t tx-chat-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind f run-shell -b "$DATA/bin/tmux-fork-tx-session '#{pane_id}' '#{client_name}'"
+bind -N "Fork this agent" f run-shell -b "$DATA/bin/tmux-fork-tx-session '#{pane_id}' '#{client_name}'"
 EOF2
 
 tmux source-file "$CONF"
