@@ -176,7 +176,7 @@ pub fn fzf_args(
         "--listen".to_owned(),
         "--track".to_owned(),
         "--with-shell=sh -c".to_owned(),
-        format!("--color={}", theme.fzf_color_arg(false)),
+        theme.fzf_color_arg(false),
         format!("--header={}\n{header_cols}", chips_line(hidden)),
         format!("--footer={footer}"),
         format!("--query={query}"),
@@ -721,7 +721,7 @@ impl Verb for RolesPanel {
                 "--with-shell=sh -c",
                 "--prompt=  roles ",
                 &format!("--header={}", panel_legend()),
-                &format!("--color={color}"),
+                &color,
                 &format!("--bind=space:{toggle}"),
                 &format!("--bind=a:{toggle_all}"),
                 "--bind=j:down,k:up",
@@ -910,22 +910,34 @@ mod tests {
             "--listen".into(),
             "--track".into(),
             "--with-shell=sh -c".into(),
-            format!("--color={}", theme.fzf_color_arg(false)),
+            theme.fzf_color_arg(false),
             format!("--header={}\n{HEADER}", chips_line(&["shell"])),
             format!("--footer={}", normal_footer(false)),
             "--query=".into(),
-            format!("--bind=start:execute-silent(( while sleep 1; do [ -s \"$TX_DIGITS_FILE\" ] || curl -fsS -XPOST \"localhost:$FZF_PORT\" -d \"{reload}\" >/dev/null 2>&1 || exit 0; done ) &)"),
+            format!(
+                "--bind=start:execute-silent(( while sleep 1; do [ -s \"$TX_DIGITS_FILE\" ] || curl -fsS -XPOST \"localhost:$FZF_PORT\" -d \"{reload}\" >/dev/null 2>&1 || exit 0; done ) &)"
+            ),
             format!("--bind=ctrl-r:{reload}"),
             format!("--bind=r:{reload}"),
             format!("--bind=p:transform({own} _picker-key p)"),
             "--bind=alt-p:print(popup)+accept".into(),
             format!("--bind=focus:transform-header({focus})+execute-silent(: >\"$TX_ARM_FILE\")"),
             format!("--bind=tab:execute({own} _roles-panel)+{reload}+transform-header({focus})"),
-            format!("--bind=click-header:execute-silent({own} _toggle-hide --click \"$FZF_CLICK_HEADER_COLUMN\" \"$FZF_CLICK_HEADER_WORD\")+{reload}+transform-header({focus})"),
-            format!("--bind=ctrl-t:execute(tmux -S /k/tmux.sock display-popup -E -h 4 -w 60% \"{tx} _edit-tag {{1}}\")+{reload}"),
-            format!("--bind=t:execute(tmux -S /k/tmux.sock display-popup -E -h 4 -w 60% \"{tx} _edit-tag {{1}}\")+{reload}"),
-            format!("--bind=d:execute-silent(printf '%s' {{1}} >\"$TX_ARM_FILE\")+transform-header({arm})"),
-            format!("--bind=y:execute-silent([ -s \"$TX_ARM_FILE\" ] && {tx} kill {{1}} >/dev/null 2>&1; : >\"$TX_ARM_FILE\")+{reload}+transform-header({focus})"),
+            format!(
+                "--bind=click-header:execute-silent({own} _toggle-hide --click \"$FZF_CLICK_HEADER_COLUMN\" \"$FZF_CLICK_HEADER_WORD\")+{reload}+transform-header({focus})"
+            ),
+            format!(
+                "--bind=ctrl-t:execute(tmux -S /k/tmux.sock display-popup -E -h 4 -w 60% \"{tx} _edit-tag {{1}}\")+{reload}"
+            ),
+            format!(
+                "--bind=t:execute(tmux -S /k/tmux.sock display-popup -E -h 4 -w 60% \"{tx} _edit-tag {{1}}\")+{reload}"
+            ),
+            format!(
+                "--bind=d:execute-silent(printf '%s' {{1}} >\"$TX_ARM_FILE\")+transform-header({arm})"
+            ),
+            format!(
+                "--bind=y:execute-silent([ -s \"$TX_ARM_FILE\" ] && {tx} kill {{1}} >/dev/null 2>&1; : >\"$TX_ARM_FILE\")+{reload}+transform-header({focus})"
+            ),
             format!("--bind=n:transform-header({focus})+execute-silent(: >\"$TX_ARM_FILE\")"),
             "--bind=j:down,k:up,g:first,G:last,q:abort".into(),
             "--bind=ctrl-d:half-page-down,ctrl-u:half-page-up".into(),

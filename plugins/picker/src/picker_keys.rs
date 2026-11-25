@@ -63,9 +63,7 @@ impl Reply {
 pub fn normal_footer(popup: bool) -> String {
     let accent = active().ansi_fg(Role::Accent);
     if popup {
-        format!(
-            "{accent}{BOLD} POPUP{RESET}  j/k move · enter opens the row in a popup · esc back"
-        )
+        format!("{accent}{BOLD} POPUP{RESET}  j/k move · enter opens the row in a popup · esc back")
     } else {
         format!(
             "{accent}{BOLD} NORMAL{RESET}  j/k move · enter open · p popup mode · i or / search · d kill · t tags · q quit"

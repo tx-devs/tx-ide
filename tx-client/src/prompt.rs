@@ -25,7 +25,6 @@ pub fn prompt_with_default(header: &str, default: &str) -> std::io::Result<Optio
             "--no-separator",
             "--bind",
             "enter:accept-or-print-query",
-            "--color",
             &colors,
         ])
         .stdin(Stdio::null())
