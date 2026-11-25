@@ -241,25 +241,28 @@ selected later has no entry, which means on.
 
 ### Theme
 
-`theme:` in `~/.config/tx-ide/config.yaml` controls the visual identity across tmux, ratatui
-screens, fzf pickers and Neovim forms (and regenerates `<data>/conf/theme.tmux` and `theme.lua`
-on `tx update` or live when the terminal switches between dark and light):
+`theme:` in `config.yaml` sets the colours of everything tx draws: the tmux frame, its own
+screens, the fzf pickers and the nvim forms.
 
 ```yaml
 theme:
-  name: auto                 # auto | tx-dark | tx-light | terminal | tokyo-night | <custom>
-  status_style: rule         # rule (heavy line with inset active window) | bar (solid fill)
-  glyphs: unicode            # unicode (╋╳, ●/▖/▲/○/×) | ascii (tx, */-/!/o/x)
-  # colors:                  # optional per-role overrides (#rrggbb or ANSI name)
-  #   accent: "#32b8ac"
-  #   signal: "#e0af68"
+  name: auto            # auto | tx-dark | tx-light | terminal | tokyo-night | a file in themes/
+  status_style: rule    # rule: the bottom edge of the frame | bar: a filled tmux bar
+  glyphs: unicode       # unicode | ascii
+  colors:               # optional: roles to replace in the named theme
+    accent: "#ff75b5"   # #rrggbb, or one of the terminal's sixteen colours by name
 ```
 
-With `name: auto`, tx follows tmux's `#{client_theme}` (`tx-dark` / `tx-light`) and falls back to
-`terminal` (pure terminal ANSI) when polarity is unknown. Guest-pane borders and the status rule
-stay achromatic — the single `signal` colour appears on the frame only when an agent needs you.
-Custom presets live under `~/.config/tx-ide/themes/<name>.yaml`. Setting `NO_COLOR=1` suppresses
-every colour while keeping typography and glyph distinctions intact.
+`auto` is `tx-dark` on a dark terminal, `tx-light` on a light one, and `terminal` (the terminal's
+own colours only) when the terminal has not said which it is. The frame round an agent has no
+colour of its own: the one colour that appears on it, `signal`, means an agent needs you. A theme
+of your own is `~/.config/tx-ide/themes/<name>.yaml`: a shipped theme as `base`, with `colors`,
+and `dark` or `light` for one background only.
+
+`tx update` applies a change, to a running server at once, and reports a role or a colour it does
+not know instead of skipping it. `NO_COLOR` removes every colour and keeps bold, dim and reverse.
+The roles, the theme file and how the theme reaches each surface are in the guide's
+[theme page](docs-site/guide/src/theme.md).
 
 ## Where files live
 
@@ -269,7 +272,7 @@ Five directories, XDG style (on macOS too), named after the application: `tx-ide
 
 | directory | default | holds |
 |---|---|---|
-| config | `~/.config/tx-ide` | `config.yaml`; your `roles/`, `harness/` and `layouts/` |
+| config | `~/.config/tx-ide` | `config.yaml`; your `roles/`, `harness/`, `layouts/` and `themes/` |
 | data | `~/.local/share/tx-ide` | the agent records with their conversation archives, `log.jsonl`, the agents' `worktrees/`, plugin data, the shipped roles and harness, the IDE's tmux config |
 | state | `~/.local/state/tx-ide` | locks, each agent's assembled prompt |
 | cache | `~/.cache/tx-ide` | Claude's built-in tool list, per Claude version |

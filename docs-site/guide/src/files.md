@@ -48,13 +48,14 @@ line for every plugin program started.
 ## What lives where
 
 **config** holds what you write by hand: `config.yaml` (the defaults for `tx create` in its
-`agent:` block, the build output `tx gc` may delete in `worktree:`, and which plugins are on,
-with their settings, in `plugins:`; `tx setup` writes it once, when there is none, and nothing
+`agent:` block, the build output `tx gc` may delete in `worktree:`, the colours in `theme:`,
+and which plugins are on, with their settings, in `plugins:`; `tx setup` writes it once, when there is none, and nothing
 writes it after that), `roles/` (your own
 roles, never pruned, overriding a shipped role of the same name), `harness/` (your own
 `agents/`, `skills/` and `mcp.json`, each agent, skill or MCP server overriding a shipped one of the same name), `layouts/` (one `<name>.yaml` per
 saved pane layout, opened by `tx layout open <name>`; `tx layout path <name>` prints the file,
-and `tx layout save <name>` writes one from a view), `presets/` (your own presets, one
+and `tx layout save <name>` writes one from a view), `themes/` (one `<name>.yaml` per theme of
+your own, see [The look and the theme](theme.md)), `presets/` (your own presets, one
 `<name>.yaml` each: see "Presets and the selection" below) and `plugins/` (your own plugins, one
 directory `<id>/` with a `plugin.yaml` each: the second plugin root, which tx reads and never
 writes).
