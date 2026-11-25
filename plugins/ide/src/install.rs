@@ -313,12 +313,15 @@ fn known_polarity(ui: &Ui, data: &Path) -> Polarity {
         .unwrap_or_else(|| Polarity::recorded(data))
 }
 
-/// Generates `<data>/conf/theme.tmux` and `<data>/conf/theme.lua` from the active configuration.
+/// Generates `<data>/conf/theme.tmux` and `<data>/conf/theme.lua` from the active configuration,
+/// and records a known `polarity` for the screens started later, which cannot ask tmux.
 fn write_theme_files(core: &TxCore, polarity: Polarity) -> Result<PathBuf, VerbError> {
     let depth = ColorDepth::detect();
     let theme = Theme::for_core(core, polarity, depth)
         .map_err(|error| VerbError::Failed(error.to_string()))?;
-    let conf_dir = core.config().directories.data.join("conf");
+    let data = &core.config().directories.data;
+    polarity.record(data).map_err(io_failed(data))?;
+    let conf_dir = data.join("conf");
     std::fs::create_dir_all(&conf_dir).map_err(io_failed(&conf_dir))?;
     let tmux_path = conf_dir.join("theme.tmux");
     let lua_path = conf_dir.join("theme.lua");
@@ -329,7 +332,7 @@ fn write_theme_files(core: &TxCore, polarity: Polarity) -> Result<PathBuf, VerbE
 
 /// `_theme-apply [dark|light]`: regenerates `<data>/conf/theme.tmux` and `theme.lua`, and sources
 /// `theme.tmux` on the running server. tmux's `client-dark-theme` / `client-light-theme` hooks run
-/// it with the background the terminal reported, which it records for the screens started later.
+/// it with the background the terminal reported.
 pub struct ThemeApplyVerb;
 
 impl Verb for ThemeApplyVerb {
@@ -346,11 +349,7 @@ impl Verb for ThemeApplyVerb {
         let data = &core.config().directories.data;
         let polarity = match argv {
             [] => known_polarity(&ui, data),
-            [reported] if reported == "dark" || reported == "light" => {
-                let polarity = Polarity::parse(reported);
-                polarity.record(data).map_err(io_failed(data))?;
-                polarity
-            }
+            [reported] if reported == "dark" || reported == "light" => Polarity::parse(reported),
             _ => {
                 let _ = writeln!(io.stderr, "usage: tx {}", self.usage());
                 return Ok(2);
