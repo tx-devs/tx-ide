@@ -80,7 +80,7 @@ fn the_header_names_the_filters_and_the_detail_a_hidden_parent() {
     assert!(text.contains("parent tx-assistant (hidden)"), "{text}");
     let text = run::snapshot(&mut app, 170, 30);
     assert!(
-        text.contains("┃ parent      tx-assistant (hidden)"),
+        text.contains("│ parent      tx-assistant (hidden)"),
         "the sidebar: {text}"
     );
     let mut app = app_with_tag("legacy");
@@ -230,7 +230,7 @@ fn the_header_counts_in_the_singular_and_wears_the_brand() {
     app.brand = "tx-qa".to_owned();
     let text = run::snapshot(&mut app, 120, 20);
     let header = text.lines().next().unwrap();
-    assert!(header.starts_with(" ╋╳ tx-qa  graph"), "{header}");
+    assert!(header.starts_with(" tx-qa  graph"), "{header}");
     assert!(header.contains(" 1 agent · "), "{header}");
     assert!(header.contains(" 1 message / 1h"), "{header}");
 }

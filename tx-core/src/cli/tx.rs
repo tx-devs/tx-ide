@@ -1,7 +1,7 @@
 //! `tx`: the thin CLI over the core. Exit 0 on success, 1 on a core error (`tx: <error>` on
 //! stderr), 2 on misuse (the usage line on stderr). `attach` replaces the process with tmux.
 
-use std::io::{IsTerminal, Write};
+use std::io::Write;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, ExitCode};
@@ -83,9 +83,6 @@ fn sender_from_env(core: &TxCore, via: Option<String>) -> Result<Sender, CoreErr
 /// of an active plugin, by verb name. A `config.yaml` that cannot be read still gets the
 /// built-in usage.
 fn help(global: &Global) {
-    if std::io::stdout().is_terminal() {
-        println!("╋╳  tx-ide\n");
-    }
     print!("{}", args::USAGE);
     let Ok(config) = core_config(global) else {
         return;
@@ -160,9 +157,6 @@ fn harness_check(
 ) -> Result<ExitCode, Failure> {
     let installation = crate::host::setup::Installation::read_with(global, core_config(global)?)?;
     let mut out = std::io::stdout().lock();
-    if std::io::stdout().is_terminal() {
-        writeln!(out, "╋╳  tx harness check").ok();
-    }
     let mut clean = true;
     let mut summary = None;
     if !plugins_only {

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use tx_client::theme::{ColorDepth, Polarity, Theme};
-use tx_client::tmux::{NVIM_RESOURCE, Ui, UiError, shell_quote};
+use tx_client::tmux::{Ui, UiError};
 use tx_client::views::{self, ViewKind, ViewRequest};
 use tx_core::core::DEFAULT_TMUX_CONF;
 use tx_core::host::bundle::KEYS_INSTALLED;
@@ -16,7 +16,7 @@ use tx_core::host::setup::ROLES_DIR;
 use tx_core::plugin::manifest::RESOURCE_KINDS;
 use tx_core::sdk::TX_BIN_ENV;
 use tx_core::updates::Outcome;
-use tx_core::{CoreConfig, Event, EventSink, EventType, TxCore, Updater, Verb, VerbError, VerbIo};
+use tx_core::{TxCore, Updater, Verb, VerbError, VerbIo};
 
 use crate::view_verb;
 
@@ -361,49 +361,6 @@ impl Verb for ThemeApplyVerb {
                 .map_err(|error| VerbError::Failed(error.to_string()))?;
         }
         Ok(0)
-    }
-}
-
-/// Sweeps a brief travelling pulse across the Junction status rule whenever `tx send` delivers
-/// a message (`EventType::MessageSent`). Non-blocking (`run-shell -b`); no-op without a server.
-pub struct MessagePulseSink {
-    config: CoreConfig,
-}
-
-impl MessagePulseSink {
-    pub fn new(config: CoreConfig) -> Self {
-        Self { config }
-    }
-}
-
-impl EventSink for MessagePulseSink {
-    fn on_event(&self, event: &Event) {
-        if event.type_ != EventType::MessageSent {
-            return;
-        }
-        let socket = self.config.socket_path();
-        if !socket.exists() {
-            return;
-        }
-        let ui = Ui::new(
-            socket.clone(),
-            self.config.tmux_conf_path(),
-            self.config.directories.data.join(NVIM_RESOURCE),
-        );
-        if !ui.quiet(&["list-sessions"]).0 {
-            return;
-        }
-        let quoted_socket = shell_quote(&socket.to_string_lossy());
-        let script = format!(
-            "for frame in '▸' '━▸' '━━▸'; do \
-               tmux -S {quoted_socket} set -g @tx-pulse \"$frame\" >/dev/null 2>&1 || exit 0; \
-               tmux -S {quoted_socket} refresh-client -S >/dev/null 2>&1 || true; \
-               sleep 0.12; \
-             done; \
-             tmux -S {quoted_socket} set -gu @tx-pulse >/dev/null 2>&1 || true; \
-             tmux -S {quoted_socket} refresh-client -S >/dev/null 2>&1 || true"
-        );
-        let _ = ui.run_shell_background(&script);
     }
 }
 

@@ -26,11 +26,6 @@ verbs:
     bin: tx-ide
     args: [_theme-apply]
 
-on-event:
-  events: [message-sent]
-  bin: tx-ide
-  args: [--tx-event]
-
 update:
   bin: tx-ide
   args: [--tx-update]

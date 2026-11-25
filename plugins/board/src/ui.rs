@@ -9,7 +9,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 use tx_client::palette::indexed;
-use tx_client::theme::{BorderRole, ColorDepth, Role, active};
+use tx_client::theme::{ColorDepth, Role, active};
 use tx_core::LlmEngineState;
 
 use super::app::{App, Picker};
@@ -72,7 +72,7 @@ fn state_mark(state: LlmEngineState, waiting: bool) -> &'static str {
     }
     match state {
         LlmEngineState::Working => glyphs.working,
-        LlmEngineState::Starting => glyphs.starting[0],
+        LlmEngineState::Starting => glyphs.starting,
         LlmEngineState::Idle => glyphs.idle,
         LlmEngineState::Ended => glyphs.ended,
     }
@@ -133,10 +133,9 @@ fn header_line(app: &App, width: u16) -> Line<'static> {
         (false, Some(at)) => format!("refreshed {}", ago(app.now - at)),
         (false, None) => "not fetched".to_owned(),
     };
-    let theme = active();
     let mut spans = vec![
         Span::styled(
-            format!(" {} ", theme.glyphs.mark),
+            format!(" {} ", tx_client::theme::MARK),
             accent().add_modifier(Modifier::BOLD),
         ),
         Span::styled("board  ", text().add_modifier(Modifier::BOLD)),
@@ -182,10 +181,7 @@ fn draw_column(app: &App, kind: ColumnKind, area: Rect, frame: &mut Frame) {
     } else {
         theme.style(Role::Rule)
     };
-    let title = theme.glyphs.inset_title(
-        BorderRole::Content,
-        &format!("{} {}", kind.title(), cards.len()),
-    );
+    let title = tx_client::theme::titled(&format!("{} {}", kind.title(), cards.len()));
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
@@ -205,7 +201,7 @@ fn draw_column(app: &App, kind: ColumnKind, area: Rect, frame: &mut Frame) {
     }
     let visible = usize::from(inner.height / CARD_ROWS);
     let first = app.scroll[index];
-    let selection = theme.selection_style(false);
+    let selection = theme.selection_style();
     let mut lines: Vec<Line<'static>> = Vec::new();
     for (row, card) in cards.iter().enumerate().skip(first).take(visible) {
         let selected = is_active && row == app.cursor[index];
@@ -287,7 +283,7 @@ fn draw_drawer(app: &App, area: Rect, frame: &mut Frame) {
         .border_type(BorderType::Plain)
         .border_style(border)
         .title(Span::styled(
-            theme.glyphs.inset_title(BorderRole::Content, &clipped),
+            tx_client::theme::titled(&clipped),
             text().add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
@@ -462,10 +458,10 @@ fn draw_problem(problem: &Failure, area: Rect, frame: &mut Frame) {
     let signal = theme.style(Role::Signal);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Thick)
+        .border_type(BorderType::Rounded)
         .border_style(signal)
         .title(Span::styled(
-            theme.glyphs.inset_title(BorderRole::Frame, title),
+            tx_client::theme::titled(title),
             signal.add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
@@ -504,10 +500,7 @@ fn draw_picker(picker: &mut Picker, area: Rect, frame: &mut Frame) {
         .border_type(BorderType::Rounded)
         .border_style(accent())
         .title(Span::styled(
-            theme.glyphs.inset_title(
-                BorderRole::Operator,
-                &format!("labels of #{}", picker.number),
-            ),
+            tx_client::theme::titled(&format!("labels of #{}", picker.number)),
             accent().add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(popup);
@@ -520,7 +513,7 @@ fn draw_picker(picker: &mut Picker, area: Rect, frame: &mut Frame) {
         .map(|choice| choice.label.name.chars().count())
         .max()
         .unwrap_or(0);
-    let selection = theme.selection_style(false);
+    let selection = theme.selection_style();
     let mut lines: Vec<Line<'static>> = picker
         .choices
         .iter()

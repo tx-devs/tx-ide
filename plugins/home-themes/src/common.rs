@@ -76,27 +76,49 @@ pub fn pixel_of(area: Rect, event: MouseEvent) -> Option<(f32, f32)> {
         })
 }
 
+/// The logo's size in cells: its pixel rows go two to a cell.
 pub fn logo_size() -> (u16, u16) {
-    (LOGO[0].chars().count() as u16, LOGO.len() as u16)
+    (LOGO[0].len() as u16, (LOGO.len() / 2) as u16)
 }
 
-/// `LOGO`'s glyphs over the scene in `logo`, shaded row by row from `top` to `bottom`; its spaces
-/// show the scene.
+/// `LOGO`'s pixels over the scene in `logo`, shaded pixel row by pixel row from `top` to
+/// `bottom`. A cell is two pixels, one above the other: a half-block whose other half, and every
+/// clear pixel, keeps the scene's colour.
 pub fn draw_logo(logo: Option<Rect>, top: Color, bottom: Color, buffer: &mut Buffer) {
     let Some(logo) = logo else {
         return;
     };
-    for (row, line) in LOGO.iter().enumerate() {
-        let color = quantised(
+    let lit = |column: usize, row: usize| LOGO[row].as_bytes()[column] == b'#';
+    let shade = |row: usize| {
+        palette(quantised(
             top,
             bottom,
             row as f32 / (LOGO.len() - 1) as f32,
             LOGO.len() as u8,
-        );
-        for (column, glyph) in line.chars().enumerate().filter(|(_, glyph)| *glyph != ' ') {
-            buffer[(logo.x + column as u16, logo.y + row as u16)]
-                .set_char(glyph)
-                .set_fg(palette(color));
+        ))
+    };
+    for cell_row in 0..LOGO.len() / 2 {
+        for column in 0..LOGO[0].len() {
+            let (upper, lower) = (cell_row * 2, cell_row * 2 + 1);
+            let cell = &mut buffer[(logo.x + column as u16, logo.y + cell_row as u16)];
+            match (lit(column, upper), lit(column, lower)) {
+                (true, true) => {
+                    cell.set_char('▀').set_fg(shade(upper)).set_bg(shade(lower));
+                }
+                // The scene's lower pixel is the cell's background, half-block or not.
+                (true, false) => {
+                    cell.set_char('▀').set_fg(shade(upper));
+                }
+                (false, true) => {
+                    let scene_upper = if cell.symbol() == "▀" {
+                        cell.fg
+                    } else {
+                        cell.bg
+                    };
+                    cell.set_char('▄').set_fg(shade(lower)).set_bg(scene_upper);
+                }
+                (false, false) => {}
+            }
         }
     }
 }

@@ -28,7 +28,7 @@ pub fn run(plugins: &[(String, PluginStatus)]) -> io::Result<Vec<(String, bool)>
             ])
             .areas(frame.area());
             frame.render_widget(
-                Line::styled("╋╳ plugins", Style::new().add_modifier(Modifier::BOLD)),
+                Line::styled("plugins", Style::new().add_modifier(Modifier::BOLD)),
                 header,
             );
             let rows = plugins.iter().enumerate().map(|(index, (id, status))| {

@@ -145,7 +145,6 @@ fail() { printf '  %s→%s %-52s %s%s%s\n' "$RED" "$X" "$1" "$RED" "$2" "$X"; }
 info() { printf '  %s%s%s\n' "$D" "$*" "$X"; }
 would() { printf '  %s→%s %-52s %swould %s%s\n' "$Y" "$X" "$1" "$Y" "$2" "$X"; }
 header() { printf '\n%s%s%s\n' "$B" "$*" "$X"; }
-[[ -t 1 ]] && printf '%s╋╳  tx-ide install%s\n' "$B" "$X"
 
 # The file behind a symlink (settings.json is usually a link into a dotfiles repository): edits
 # and backups land there, so the link survives and the repository sees the change.

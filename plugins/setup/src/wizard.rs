@@ -22,7 +22,7 @@ use crate::presets::Bundles;
 
 /// The header when the ticks are no preset's exact set.
 const CUSTOM: &str = "custom";
-const NOTHING: &str = "╋╳ tx setup: nothing is selected (tick a plugin, or q to leave)";
+const NOTHING: &str = "tx setup: nothing is selected (tick a plugin, or q to leave)";
 const LINK_DOTFILES: &str = "link ~/.config/nvim and ~/.tmux.conf to this checkout";
 const KEYS: &str = "j/k move   space toggle   1 headless   2 ide   3 full   enter accept   q leave";
 
@@ -168,7 +168,7 @@ impl<'a> Wizard<'a> {
             return NOTHING.to_owned();
         }
         format!(
-            "╋╳ tx setup: {}   ({} of {} plugins)",
+            "tx setup: {}   ({} of {} plugins)",
             self.preset().unwrap_or(CUSTOM),
             self.ticked.len(),
             self.bundles.manifests.len()
@@ -333,7 +333,7 @@ mod tests {
         assert_eq!(
             screen(&wizard)[..9],
             [
-                "╋╳ tx setup: full   (5 of 5 plugins)",
+                "tx setup: full   (5 of 5 plugins)",
                 KEYS,
                 "",
                 "› [x] engine  core   The engine plugin.",
@@ -369,7 +369,7 @@ mod tests {
         assert_eq!(wizard.preset(), Some("ide"));
         press(&mut wizard, " ");
         assert_eq!(wizard.preset(), None);
-        assert!(screen(&wizard)[0].starts_with("╋╳ tx setup: custom "));
+        assert!(screen(&wizard)[0].starts_with("tx setup: custom "));
         press(&mut wizard, "3");
         assert_eq!(wizard.preset(), Some("full"));
     }
@@ -390,7 +390,7 @@ mod tests {
         );
         press(&mut wizard, "2");
         assert_eq!(wizard.preset(), Some("ide"));
-        assert!(screen(&wizard)[0].starts_with("╋╳ tx setup: ide "));
+        assert!(screen(&wizard)[0].starts_with("tx setup: ide "));
         press(&mut wizard, " ");
         assert_eq!(wizard.preset(), None);
         press(&mut wizard, " ");
@@ -465,7 +465,7 @@ mod tests {
         wizard.ticked.clear();
         assert_eq!(
             screen(&wizard)[0],
-            "╋╳ tx setup: nothing is selected (tick a plugin, or q to leave)"
+            "tx setup: nothing is selected (tick a plugin, or q to leave)"
         );
         assert_eq!(press(&mut wizard, "\n"), Step::Continue);
         // The dotfiles row is no plugin.
@@ -475,7 +475,7 @@ mod tests {
         assert!(screen(&wizard)[0].contains("nothing is selected"));
         assert_eq!(press(&mut wizard, "q"), Step::Leave);
         press(&mut wizard, "g ");
-        assert!(screen(&wizard)[0].starts_with("╋╳ tx setup: custom "));
+        assert!(screen(&wizard)[0].starts_with("tx setup: custom "));
         assert_eq!(press(&mut wizard, "\n"), Step::Accept);
     }
 

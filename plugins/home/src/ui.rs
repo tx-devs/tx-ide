@@ -1,17 +1,17 @@
 //! Drawing: the session list with its header and footer, and the plugins / keys sub-lists,
-//! rendered into a [`Buffer`]. Colours go through [`palette`], so `TX_HOME_COLORS=256` swaps
-//! the true-colour constants for the nearest entries of the 256-colour palette.
+//! rendered into a [`Buffer`]. Colours are the theme's roles. Over a backdrop the list sits in
+//! a card, so no scene shows through the text.
 use std::time::Duration;
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Widget};
+use ratatui::widgets::{Block, BorderType, Widget};
 use tx_client::render::reltime;
 use tx_core::LlmEngineState;
 
-use tx_client::theme::{BorderRole, Role, active};
+use tx_client::theme::{MARK, Role, active, titled};
 
 use crate::backdrop::{Backdrop, is_text, layout};
 use crate::model::{AgentRow, AssistantState, Context, Detail, Home, Row, View};
@@ -49,34 +49,52 @@ fn truncate(text: &str, width: usize) -> String {
     }
 }
 
-/// `frame` is a 4 Hz clock; it only picks the spinner glyph of starting agents.
-/// `themed`: a backdrop shows behind, so the selected row is a solid accent bar.
-pub fn draw(home: &Home, frame: usize, area: Rect, buf: &mut Buffer, themed: bool) {
+/// `logo_above`: a backdrop's logo shows above `area`, so the header does not repeat the mark.
+pub fn draw(home: &Home, area: Rect, buf: &mut Buffer, logo_above: bool) {
     match home.view() {
-        View::Main => draw_main(home, frame, area, buf, themed),
-        View::Plugins(row) => draw_plugins(home, row, area, buf, themed),
-        View::Keys(row) => draw_keys(home, row, area, buf, themed),
-        View::Layouts(row) => draw_layouts(home, row, area, buf, themed),
+        View::Main => draw_main(home, area, buf, logo_above),
+        View::Plugins(row) => draw_plugins(home, row, area, buf),
+        View::Keys(row) => draw_keys(home, row, area, buf),
+        View::Layouts(row) => draw_layouts(home, row, area, buf),
     }
 }
 
 /// The backdrop, if any, then home's text over the part of the area below the logo. Home draws
 /// into a layer first, so the backdrop knows which cells hold text; those cells go on top,
-/// keeping the backdrop's background where home set none.
+/// keeping the backdrop's background where home set none. With a theme that has fills the text
+/// sits in a card, which is all text to the backdrop: no fish swims behind a name.
 pub fn draw_frame(
     home: &Home,
-    frame: usize,
     backdrop: Option<&mut dyn Backdrop>,
     elapsed: Duration,
     area: Rect,
     buffer: &mut Buffer,
 ) {
     let Some(backdrop) = backdrop else {
-        return draw(home, frame, area, buffer, false);
+        return draw(home, area, buffer, false);
     };
     let (logo, content) = layout(area, backdrop.logo_size());
     let mut text = Buffer::empty(area);
-    draw(home, frame, content, &mut text, true);
+    let theme = active();
+    match theme.color(Role::Surface).filter(|_| theme.has_fills()) {
+        Some(surface) => {
+            let card = card(content);
+            text.set_style(card, Style::new().bg(surface));
+            let block = Block::bordered()
+                .border_type(BorderType::Rounded)
+                .border_style(role(Role::Rule));
+            let inner = block.inner(card);
+            block.render(card, &mut text);
+            let padded = Rect::new(
+                inner.x + 1,
+                inner.y,
+                inner.width.saturating_sub(2),
+                inner.height,
+            );
+            draw(home, padded, &mut text, logo.is_some());
+        }
+        None => draw(home, content, &mut text, logo.is_some()),
+    }
     backdrop.paint(elapsed, area, logo, &text, buffer);
     for position in area.positions() {
         let drawn = &text[position];
@@ -91,12 +109,26 @@ pub fn draw_frame(
     }
 }
 
-fn selected(themed: bool) -> Style {
-    active().selection_style(themed)
+/// The card's widest: a list is read down its left edge, so a wider card is only empty.
+const CARD_WIDTH: u16 = 104;
+
+/// The card in `content`: centred, a cell of scene above and below it.
+fn card(content: Rect) -> Rect {
+    let width = content.width.saturating_sub(4).min(CARD_WIDTH);
+    Rect::new(
+        content.x + (content.width - width) / 2,
+        content.y,
+        width,
+        content.height.saturating_sub(1),
+    )
 }
 
-fn draw_main(home: &Home, frame: usize, area: Rect, buf: &mut Buffer, themed: bool) {
-    let header = header_line(home, usize::from(area.width));
+fn selected() -> Style {
+    active().selection_style()
+}
+
+fn draw_main(home: &Home, area: Rect, buf: &mut Buffer, logo_above: bool) {
+    let header = header_line(home, usize::from(area.width), logo_above);
     put(buf, area, area.x, area.y, &header, area.width);
     if area.height < 2 {
         return;
@@ -111,7 +143,7 @@ fn draw_main(home: &Home, frame: usize, area: Rect, buf: &mut Buffer, themed: bo
     let mut block: Option<(usize, usize)> = None;
     for (index, row) in home.rows().iter().enumerate() {
         let start = lines.len();
-        lines.extend(row_lines(row, &home.context, frame));
+        lines.extend(row_lines(row, &home.context));
         if Some(index) == cursor {
             block = Some((start, lines.len()));
         } else if let Some((_, end)) = &mut block
@@ -135,65 +167,73 @@ fn draw_main(home: &Home, frame: usize, area: Rect, buf: &mut Buffer, themed: bo
         if Some(index) == cursor_line {
             buf.set_style(
                 Rect::new(area.x, y, area.width, 1).intersection(area),
-                selected(themed),
+                selected(),
             );
+            buf[(area.x, y)]
+                .set_symbol(active().glyphs.prompt)
+                .set_style(active().bold(Role::Accent));
         }
     }
 }
 
-fn header_line(home: &Home, width: usize) -> Line<'static> {
+fn header_line(home: &Home, width: usize, logo_above: bool) -> Line<'static> {
     let context = &home.context;
-    let running = context
-        .agents
-        .iter()
-        .filter(|agent| !agent.is_assistant && agent.state != LlmEngineState::Ended)
+    let agents = || context.agents.iter().filter(|agent| !agent.is_assistant);
+    let running = agents()
+        .filter(|agent| agent.state != LlmEngineState::Ended)
         .count();
-    let ended_today = context
-        .agents
-        .iter()
-        .filter(|agent| {
-            !agent.is_assistant
-                && agent.state == LlmEngineState::Ended
-                && context.now - agent.age_at <= DAY
-        })
+    let waiting = agents()
+        .filter(|agent| agent.state == LlmEngineState::Idle && agent.waiting)
+        .count();
+    let ended_today = agents()
+        .filter(|agent| agent.state == LlmEngineState::Ended && context.now - agent.age_at <= DAY)
         .count();
     let theme = active();
     let glyphs = theme.glyphs;
-    let counts = format!("  {running} running · {ended_today} ended today · assistant ");
+    let mut spans = Vec::new();
+    if !logo_above {
+        spans.push(Span::styled(MARK, theme.bold(Role::Accent)));
+        spans.push(Span::raw("  "));
+    }
+    spans.push(Span::styled(
+        format!("{running} running"),
+        theme.bold(Role::Text),
+    ));
+    if waiting > 0 {
+        spans.push(Span::styled(" · ", dim()));
+        spans.push(Span::styled(
+            format!("{waiting} needs you"),
+            role(Role::Signal),
+        ));
+    }
+    spans.push(Span::styled(
+        format!(" · {ended_today} ended today · assistant "),
+        dim(),
+    ));
     let (state, style) = match &context.assistant {
         AssistantState::Absent => (format!("{} none", glyphs.idle), dim()),
-        AssistantState::Creating => (
-            format!("{} starting · creating", glyphs.starting[0]),
-            role(Role::Signal),
-        ),
-        AssistantState::Starting => (
-            format!("{} starting · claude", glyphs.starting[0]),
-            role(Role::Signal),
-        ),
+        AssistantState::Creating => (format!("{} starting · creating", glyphs.starting), dim()),
+        AssistantState::Starting => (format!("{} starting · claude", glyphs.starting), dim()),
         AssistantState::Ready => (format!("{} ready", glyphs.working), role(Role::Working)),
         AssistantState::Stopped { .. } => (format!("{} stopped · r restart", glyphs.idle), dim()),
         AssistantState::Failed(reason) => {
             let prefix = format!("{} failed: ", glyphs.failed);
-            let used =
-                glyphs.mark.chars().count() + counts.chars().count() + prefix.chars().count();
-            let reason = truncate(reason, width.saturating_sub(used));
+            let used: usize = spans.iter().map(|span| span.content.chars().count()).sum();
+            let reason = truncate(reason, width.saturating_sub(used + prefix.chars().count()));
             (format!("{prefix}{reason}"), role(Role::Failed))
         }
     };
-    Line::from(vec![
-        Span::styled(glyphs.mark, theme.bold(Role::Accent)),
-        Span::styled(counts, dim()),
-        Span::styled(state, style),
-    ])
+    spans.push(Span::styled(state, style));
+    Line::from(spans)
 }
 
-fn row_lines(row: &Row<'_>, context: &Context, frame: usize) -> Vec<Line<'static>> {
+fn row_lines(row: &Row<'_>, context: &Context) -> Vec<Line<'static>> {
     match row {
         Row::Project(project) => vec![Line::from(vec![
             Span::styled(project.name.clone(), active().bold(Role::Text)),
             Span::styled(format!("  {}", project.path.display()), dim()),
         ])],
-        Row::Agent(agent) => vec![agent_line(agent, context.now, frame)],
+        Row::Agent(agent) => vec![agent_line(agent, context.now)],
         Row::Detail(agent, detail) => detail_lines(agent, *detail, context.now),
         Row::Views(views) => {
             let names: Vec<&str> = views.iter().map(|view| view.name.as_str()).collect();
@@ -208,15 +248,11 @@ fn row_lines(row: &Row<'_>, context: &Context, frame: usize) -> Vec<Line<'static
     }
 }
 
-fn agent_line(agent: &AgentRow, now: f64, frame: usize) -> Line<'static> {
+fn agent_line(agent: &AgentRow, now: f64) -> Line<'static> {
     let glyphs = active().glyphs;
     let (glyph, word, glyph_style) = match agent.state {
         LlmEngineState::Working => (glyphs.working, "working", role(Role::Working)),
-        LlmEngineState::Starting => (
-            glyphs.starting[frame % glyphs.starting.len()],
-            "starting",
-            role(Role::Muted),
-        ),
+        LlmEngineState::Starting => (glyphs.starting, "starting", role(Role::Muted)),
         LlmEngineState::Idle if agent.waiting => {
             (glyphs.needs_you, "needs you", role(Role::Signal))
         }
@@ -375,7 +411,7 @@ struct List<'a> {
     hint: &'a str,
 }
 
-fn draw_list(list: &List<'_>, area: Rect, buf: &mut Buffer, themed: bool) {
+fn draw_list(list: &List<'_>, area: Rect, buf: &mut Buffer) {
     let List {
         title,
         header,
@@ -385,10 +421,10 @@ fn draw_list(list: &List<'_>, area: Rect, buf: &mut Buffer, themed: bool) {
         hint,
     } = list;
     let (row, highlight) = (*row, *highlight);
-    let theme = active();
     let block = Block::bordered()
-        .title(theme.glyphs.inset_title(BorderRole::Content, title))
-        .border_style(role(Role::Accent));
+        .border_type(BorderType::Rounded)
+        .title(titled(title))
+        .border_style(role(Role::Rule));
     let inner = block.inner(area);
     block.render(area, buf);
     if inner.height < 2 {
@@ -418,7 +454,7 @@ fn draw_list(list: &List<'_>, area: Rect, buf: &mut Buffer, themed: bool) {
     for (index, line) in rows.iter().enumerate().skip(first).take(body) {
         put(buf, inner, inner.x, y, line, inner.width);
         if highlight && index == row {
-            buf.set_style(Rect::new(inner.x, y, inner.width, 1), selected(themed));
+            buf.set_style(Rect::new(inner.x, y, inner.width, 1), selected());
         }
         y += 1;
     }
@@ -432,7 +468,7 @@ fn draw_list(list: &List<'_>, area: Rect, buf: &mut Buffer, themed: bool) {
     );
 }
 
-fn draw_plugins(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: bool) {
+fn draw_plugins(home: &Home, row: usize, area: Rect, buf: &mut Buffer) {
     let idw = home
         .context
         .plugins
@@ -464,10 +500,10 @@ fn draw_plugins(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: b
         highlight: false,
         hint: "read-only · prefix+P switches them · esc back",
     };
-    draw_list(&list, area, buf, themed);
+    draw_list(&list, area, buf);
 }
 
-fn draw_keys(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: bool) {
+fn draw_keys(home: &Home, row: usize, area: Rect, buf: &mut Buffer) {
     let keys: Vec<String> = home
         .context
         .keys
@@ -503,12 +539,12 @@ fn draw_keys(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: bool
         highlight: false,
         hint: "j/k scroll · esc back",
     };
-    draw_list(&list, area, buf, themed);
+    draw_list(&list, area, buf);
 }
 
 /// One layout name per row, the selected one highlighted; with none, how to make one. The hint
 /// line is the new-layout input while it is open.
-fn draw_layouts(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: bool) {
+fn draw_layouts(home: &Home, row: usize, area: Rect, buf: &mut Buffer) {
     let names = home.context.layouts.as_deref().unwrap_or_default();
     let (rows, highlight) = if names.is_empty() {
         let empty = r#"no layouts — n new, or nvim "$(tx layout path NAME)""#;
@@ -529,7 +565,7 @@ fn draw_layouts(home: &Home, row: usize, area: Rect, buf: &mut Buffer, themed: b
         highlight,
         hint: &footer,
     };
-    draw_list(&list, area, buf, themed);
+    draw_list(&list, area, buf);
 }
 
 #[cfg(test)]
@@ -545,15 +581,15 @@ mod tests {
     const W: u16 = 80;
     const H: u16 = 30;
 
-    fn render_sized(home: &Home, frame: usize, width: u16, height: u16) -> Buffer {
+    fn render_sized(home: &Home, width: u16, height: u16) -> Buffer {
         let area = Rect::new(0, 0, width, height);
         let mut buf = Buffer::empty(area);
-        draw(home, frame, area, &mut buf, false);
+        draw(home, area, &mut buf, false);
         buf
     }
 
     fn render(home: &Home) -> Buffer {
-        render_sized(home, 0, W, H)
+        render_sized(home, W, H)
     }
 
     fn text(buf: &Buffer) -> Vec<String> {
@@ -609,12 +645,12 @@ mod tests {
         let lines = text(&render(&home));
         assert_eq!(
             lines[0],
-            "╋╳  2 running · 1 ended today · assistant ● ready"
+            "tx  2 running · 1 ended today · assistant ● ready"
         );
         for (state, tail) in [
             (AssistantState::Absent, "assistant ○ none"),
-            (AssistantState::Creating, "assistant ▖ starting · creating"),
-            (AssistantState::Starting, "assistant ▖ starting · claude"),
+            (AssistantState::Creating, "assistant ◌ starting · creating"),
+            (AssistantState::Starting, "assistant ◌ starting · claude"),
             (
                 AssistantState::Stopped { id: "s1".into() },
                 "assistant ○ stopped · r restart",
@@ -676,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_rows_show_state_age_and_branch_and_starting_ones_spin() {
+    fn agent_rows_show_state_age_and_branch() {
         let mut home = Home::new(context());
         home.context
             .agents
@@ -690,13 +726,7 @@ mod tests {
         );
         assert!(lines[row_of(&lines, "docs-site")].starts_with("  × docs-site"));
         assert!(lines[row_of(&lines, "docs-site")].contains("ended       8m"));
-        for (frame, glyph) in [(0, "▖"), (1, "▘"), (2, "▝"), (3, "▗"), (4, "▖")] {
-            let lines = text(&render_sized(&home, frame, W, H));
-            assert!(
-                lines[row_of(&lines, "late")].starts_with(&format!("  {glyph} late")),
-                "{frame}"
-            );
-        }
+        assert!(lines[row_of(&lines, "late")].contains(" ◌ late"));
     }
 
     #[test]
@@ -733,7 +763,7 @@ mod tests {
         assert_eq!(lines[fixer + 1], "      …");
 
         home.context.details = BTreeMap::from([("w1".to_owned(), detail())]);
-        let lines = text(&render_sized(&home, 0, 120, H));
+        let lines = text(&render_sized(&home, 120, H));
         let fixer = row_of(&lines, "fixer   ");
         assert_eq!(
             lines[fixer + 1],
@@ -774,7 +804,7 @@ mod tests {
         let lines = text(&buf);
         let cursor = u16::try_from(row_of(&lines, "fixer   ")).unwrap();
         let other = u16::try_from(row_of(&lines, "startup-ux")).unwrap();
-        let expected = super::selected(false);
+        let expected = super::selected();
         if let Some(bg) = expected.bg {
             assert!((0..W).all(|x| buf[(x, cursor)].bg == bg));
             assert!((0..W).all(|x| buf[(x, other)].bg != bg));
@@ -785,22 +815,27 @@ mod tests {
     }
 
     #[test]
-    fn a_themed_cursor_row_is_solid_not_reversed() {
+    fn the_cursor_row_wears_the_selection_and_the_prompt_glyph() {
         let home = Home::new(context());
         let area = Rect::new(0, 0, W, H);
         let mut buf = Buffer::empty(area);
-        draw(&home, 0, area, &mut buf, true);
-        let cursor = u16::try_from(row_of(&text(&buf), "fixer   ")).unwrap();
-        if let Some(accent) = active().color(Role::Accent) {
-            assert!((0..W).all(|x| buf[(x, cursor)].bg == accent));
-            assert!(
-                buf.content
-                    .iter()
-                    .all(|cell| !cell.modifier.contains(Modifier::REVERSED))
-            );
-        } else {
-            assert!((0..W).all(|x| buf[(x, cursor)].modifier.contains(Modifier::REVERSED)));
-        }
+        draw(&home, area, &mut buf, true);
+        let lines = text(&buf);
+        // A logo above: the header does not repeat the mark.
+        assert!(lines[0].starts_with("2 running"), "{}", lines[0]);
+        let cursor = u16::try_from(row_of(&lines, "fixer   ")).unwrap();
+        assert_eq!(buf[(0, cursor)].symbol(), "›");
+        let expected = super::selected();
+        assert!((1..W).all(|x| match expected.bg {
+            Some(bg) => buf[(x, cursor)].bg == bg,
+            None => buf[(x, cursor)].modifier.contains(Modifier::REVERSED),
+        }));
+    }
+
+    #[test]
+    fn the_card_is_centred_with_a_row_of_scene_below() {
+        assert_eq!(card(Rect::new(0, 5, 120, 24)), Rect::new(8, 5, 104, 23));
+        assert_eq!(card(Rect::new(0, 5, 80, 24)), Rect::new(2, 5, 76, 23));
     }
 
     struct Fill {
@@ -844,15 +879,21 @@ mod tests {
         let area = Rect::new(0, 0, W, H);
         let mut buf = Buffer::empty(area);
         let mut fill = Fill { logo: (10, 3) };
-        draw_frame(&home, 0, Some(&mut fill), Duration::ZERO, area, &mut buf);
+        draw_frame(&home, Some(&mut fill), Duration::ZERO, area, &mut buf);
         assert!((35..45).all(|x| buf[(x, 0)].symbol() == "L"));
-        assert!(text(&buf)[4].starts_with("╋╳"));
-        assert_eq!(buf[(0, 4)].bg, Color::Rgb(1, 2, 3));
-        // The blank between two words is not text: the backdrop shows there.
-        assert_eq!(buf[(2, 4)].symbol(), "w");
-        let cursor = u16::try_from(row_of(&text(&buf), "fixer   ")).unwrap();
-        if let Some(accent) = active().color(Role::Accent) {
-            assert!((0..W).all(|x| buf[(x, cursor)].bg == accent));
+        let lines = text(&buf);
+        if active().has_fills() {
+            // A card: all of it is text to the backdrop, the scene shows round it only.
+            assert!(lines[4].starts_with("ww╭─"), "{}", lines[4]);
+            assert!(lines[5].starts_with("ww│ 2 running"), "{}", lines[5]);
+            assert_eq!(buf[(0, 5)].bg, Color::Rgb(1, 2, 3));
+            assert_eq!(buf[(5, 5)].symbol(), " ");
+        } else {
+            // No fills (an unknown background): no card, the text straight on the scene, and
+            // the blank between two words is not text: the backdrop shows there.
+            assert!(lines[4].starts_with("2wrunning"), "{}", lines[4]);
+            assert_eq!(buf[(0, 4)].bg, Color::Rgb(1, 2, 3));
+            assert_eq!(buf[(1, 4)].symbol(), "w");
         }
     }
 
@@ -861,7 +902,7 @@ mod tests {
         let home = Home::new(context());
         let area = Rect::new(0, 0, W, H);
         let mut buf = Buffer::empty(area);
-        draw_frame(&home, 0, None, Duration::ZERO, area, &mut buf);
+        draw_frame(&home, None, Duration::ZERO, area, &mut buf);
         assert_eq!(buf, render(&home));
     }
 
@@ -896,7 +937,7 @@ mod tests {
     #[test]
     fn first_run_screen_lists_the_three_verbs() {
         let home = Home::new(first_run_context());
-        let buf = render_sized(&home, 0, 100, H);
+        let buf = render_sized(&home, 100, H);
         let lines = text(&buf);
         let intro = row_of(&lines, "No agents yet. Three ways to start:");
         assert_eq!(lines[intro + 1], "");
@@ -917,12 +958,12 @@ mod tests {
             lines[intro + 6],
             "Ended sessions will show up here under their project, greyed, with r to resume."
         );
-        assert!(lines[row_of(&lines, "tx-assistant")].starts_with("  ○ tx-assistant"));
+        assert!(lines[row_of(&lines, "tx-assistant")].contains(" ○ tx-assistant"));
         let mut starting = Home::new(first_run_context());
         starting.context.assistant = AssistantState::Starting;
         assert_eq!(
             text(&render(&starting))[0],
-            "╋╳  0 running · 0 ended today · assistant ▖ starting · claude"
+            "tx  0 running · 0 ended today · assistant ◌ starting · claude"
         );
         let key_cell = &buf[(2, u16::try_from(intro + 2).unwrap())];
         assert_eq!(
@@ -956,10 +997,10 @@ mod tests {
         else {
             panic!("the cursor is on an agent");
         };
-        let buf = render_sized(&home, 0, W, 10);
+        let buf = render_sized(&home, W, 10);
         let lines = text(&buf);
-        assert!(lines[0].starts_with("╋╳"));
-        let expected = super::selected(false);
+        assert!(lines[0].starts_with("tx"));
+        let expected = super::selected();
         let highlighted: Vec<usize> = (0..10)
             .filter(|&y| match expected.bg {
                 Some(bg) => buf[(0, y)].bg == bg,
@@ -997,15 +1038,15 @@ mod tests {
         home.key(KeyCode::Right);
         home.context.details = BTreeMap::from([(selected.id.clone(), detail())]);
 
-        let lines = text(&render_sized(&home, 0, 60, 10));
+        let lines = text(&render_sized(&home, 60, 10));
         let you = row_of(&lines, "you ›");
         assert!((1..9).contains(&you), "{lines:?}");
         assert!(lines[you - 2].contains(&selected.name), "{lines:?}");
 
-        let buf = render_sized(&home, 0, 60, 5);
+        let buf = render_sized(&home, 60, 5);
         let lines = text(&buf);
         assert!(lines[1].contains(&selected.name), "{lines:?}");
-        let expected = super::selected(false);
+        let expected = super::selected();
         let highlighted = match expected.bg {
             Some(bg) => buf[(0, 1)].bg == bg,
             None => buf[(0, 1)].modifier.contains(Modifier::REVERSED),
@@ -1037,12 +1078,12 @@ mod tests {
         ];
         for home in &homes {
             for (width, height) in [(0, 0), (1, 1), (5, 3), (10, 3), (44, 8), (3, 40), (200, 2)] {
-                render_sized(home, 3, width, height);
+                render_sized(home, width, height);
             }
         }
         let area = Rect::new(7, 5, 5, 3);
         let mut buf = Buffer::empty(Rect::new(0, 0, 20, 20));
-        draw(&homes[0], 0, area, &mut buf, false);
+        draw(&homes[0], area, &mut buf, false);
     }
 
     #[test]
@@ -1067,7 +1108,7 @@ mod tests {
         assert!(lines[0].contains(" layouts "), "{}", lines[0]);
         let pair = u16::try_from(row_of(&lines, "│pair ")).unwrap();
         let solo = u16::try_from(row_of(&lines, "│solo ")).unwrap();
-        let expected = super::selected(false);
+        let expected = super::selected();
         let highlighted = |y: u16| {
             (1..W - 1).all(|x| match expected.bg {
                 Some(bg) => buf[(x, y)].bg == bg,

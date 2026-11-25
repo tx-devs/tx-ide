@@ -4,14 +4,17 @@
 //! and a mark goes with its session. The record stays the truth: [`need_of`] reads it.
 
 use tx_client::tmux::Ui;
-use tx_core::{Agent, IdleReason, LlmEngineState};
+use tx_core::{Agent, CoreError, IdleReason, ListFilter, LlmEngineState, TxCore};
 
 /// Kept in LOCKSTEP with `keys/attention.tmux`, which reads it in the status line and the hooks.
 pub const MARK_OPTION: &str = "@tx-attention";
 /// Global option rendered into `status-left` (`#{E:@tx-attention-bar}`): at most [`MAX_NAMED`]
-/// named entries plus an overflow counter (`▲ +N` / `○ +N`), styled through `@tx-signal-style`
-/// and `@tx-muted-style` so dark/light switches take effect live.
+/// named entries plus an overflow counter (`▲ +N` / `○ +N`), styled through the theme's
+/// `@tx-attention-style` and `@tx-muted-style` options, so a theme change takes effect live.
 pub const BAR_OPTION: &str = "@tx-attention-bar";
+/// Global option rendered into `status-right` (`#{E:@tx-swarm}`): the running agents counted by
+/// state, `2● 1▲ 3○`.
+pub const SWARM_OPTION: &str = "@tx-swarm";
 /// Maximum individually named agents in the status line before collapsing into `+N`.
 pub const MAX_NAMED: usize = 2;
 
@@ -172,8 +175,10 @@ pub fn format_bar(marks: &[Mark]) -> String {
     for mark in marks.iter().take(MAX_NAMED) {
         let name = mark.name.replace('#', "##");
         match mark.need {
-            Need::Waiting => parts.push(format!("#[#{{@tx-signal-style}}]▲ {name}#[default]")),
-            Need::Finished => parts.push(format!("#[#{{@tx-muted-style}}]○ {name}#[default]")),
+            Need::Waiting => {
+                parts.push(format!("#[#{{@tx-attention-style}}] ▲ {name} #[default]"));
+            }
+            Need::Finished => parts.push(format!("#[#{{@tx-muted-style}}] ○ {name} #[default]")),
         }
     }
     if marks.len() > MAX_NAMED {
@@ -182,12 +187,50 @@ pub fn format_bar(marks: &[Mark]) -> String {
             .iter()
             .any(|mark| mark.need == Need::Waiting);
         if has_waiting {
-            parts.push(format!("#[#{{@tx-signal-style}}]▲ +{overflow}#[default]"));
+            parts.push(format!(
+                "#[#{{@tx-attention-style}}] ▲ +{overflow} #[default]"
+            ));
         } else {
-            parts.push(format!("#[#{{@tx-muted-style}}]○ +{overflow}#[default]"));
+            parts.push(format!("#[#{{@tx-muted-style}}] ○ +{overflow} #[default]"));
         }
     }
-    format!("{} ", parts.join(" "))
+    parts.concat()
+}
+
+/// The running agents counted by state: working, waiting on the operator, resting. A count of
+/// zero is left out; empty with no running agent.
+pub fn format_swarm(working: usize, waiting: usize, resting: usize) -> String {
+    [
+        (working, "#{@tx-working-style}", "●"),
+        (waiting, "#{@tx-signal-style}", "▲"),
+        (resting, "#{@tx-muted-style}", "○"),
+    ]
+    .iter()
+    .filter(|(count, _, _)| *count > 0)
+    .map(|(count, style, glyph)| {
+        format!("#[#{{@tx-muted-style}}]{count}#[{style}]{glyph}#[default] ")
+    })
+    .collect()
+}
+
+/// Recomputes [`SWARM_OPTION`] on the tmux server from the records of the running agents.
+pub fn refresh_swarm(core: &TxCore, ui: &Ui) -> Result<(), CoreError> {
+    let (mut working, mut waiting, mut resting) = (0, 0, 0);
+    for id in core.list_agents(&ListFilter::new().running())? {
+        let agent = core.get_agent(&id)?;
+        match (agent.state, agent.idle_reason) {
+            (LlmEngineState::Working, _) => working += 1,
+            (LlmEngineState::Idle, Some(IdleReason::Waiting)) => waiting += 1,
+            _ => resting += 1,
+        }
+    }
+    let rendered = format_swarm(working, waiting, resting);
+    if rendered.is_empty() {
+        ui.quiet(&["set-option", "-gu", SWARM_OPTION]);
+    } else {
+        ui.quiet(&["set-option", "-g", SWARM_OPTION, &rendered]);
+    }
+    Ok(())
 }
 
 /// Recomputes [`BAR_OPTION`] on the tmux server from the current session marks.
@@ -312,5 +355,14 @@ mod tests {
             bar.contains("▲ alpha") && bar.contains("○ beta") && bar.contains("○ +1"),
             "{bar}"
         );
+    }
+
+    #[test]
+    fn the_swarm_counts_by_state_and_leaves_out_zeroes() {
+        assert_eq!(format_swarm(0, 0, 0), "");
+        let swarm = format_swarm(2, 0, 3);
+        assert!(swarm.contains("2#[#{@tx-working-style}]●"), "{swarm}");
+        assert!(swarm.contains("3#[#{@tx-muted-style}]○"), "{swarm}");
+        assert!(!swarm.contains('▲'), "{swarm}");
     }
 }

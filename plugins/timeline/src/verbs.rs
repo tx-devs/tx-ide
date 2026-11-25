@@ -277,11 +277,7 @@ impl Verb for TimelineOpen {
             return Ok(2);
         };
         let command = tx_command(core, &[ATTACH_VERB, pane, client]);
-        let theme = tx_client::theme::active();
-        let title = theme.glyphs.inset_title(
-            tx_client::theme::BorderRole::Frame,
-            &format!("{} timeline", theme.glyphs.mark),
-        );
+        let title = tx_client::theme::popup_title("timeline");
         Ui::from_core(core)
             .run(&[
                 "display-popup",

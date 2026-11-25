@@ -90,7 +90,7 @@ fn pick_nests_into_a_view_pane() {
     let mut label = String::new();
     let nested = cli.wait_for(5, || {
         label = cli.ok(&["_pane-label", &pane]);
-        label.contains("#[bold]inner#[default]")
+        label.contains("]inner#[default]")
     });
     assert!(nested, "pane never showed the nested session: {label:?}");
 }

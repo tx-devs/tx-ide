@@ -4,7 +4,7 @@
 //! every other verb prints while a step is pending.
 
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader, IsTerminal, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{ExitCode, Stdio};
@@ -99,9 +99,6 @@ pub fn run(global: &Global, arguments: &[String]) -> Result<ExitCode, Failure> {
     let source = source(arguments).map_err(Failure::Usage)?;
     let config = core_config(global)?;
     let mut out = std::io::stdout().lock();
-    if std::io::stdout().is_terminal() {
-        writeln!(out, "╋╳  tx update").ok();
-    }
     let mut summary = Summary::default();
     if let Some(source) = &source
         && !ship(global, &config, source, &mut out, &mut summary)?

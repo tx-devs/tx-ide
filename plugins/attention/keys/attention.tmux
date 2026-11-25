@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # keys: Space
-# unset: status-left status-left-length @tx-attention-bar
+# unset: status-left status-left-length @tx-attention-bar @tx-swarm
 # unhook: pane-focus-in client-focus-in
 # tx key plugin `attention`: the agents that need the operator. Run by `run-shell` from the
 # server's tmux.conf, which `tx update` writes.
 #
 #   prefix+Space    go to the first agent that needs you (`tx attention next`): the pane that
 #                   shows it, else a popup
-#   status-left     leading `╋╳` mark plus at most 2 marked agents and `+N` overflow
-#                   (`@tx-attention-bar`), styled via `@tx-signal-style` / `@tx-muted-style`
+#   status-left     the `tx` chip, then at most 2 marked agents and `+N` overflow
+#                   (`@tx-attention-bar`), styled via `@tx-attention-style` / `@tx-muted-style`
+#   @tx-swarm       the running agents counted by state, shown by the ide's status-right
 #   focus hooks     a finished agent stops needing you once you look at it
 #
 # A mark is the session option @tx-attention, `<need> <since>`, set and taken back by the
@@ -38,7 +39,7 @@ REFRESH="run-shell -b \"$TX attention _refresh >/dev/null 2>&1 || true\""
 cat >>"$CONF" <<EOF2
 bind Space run-shell -b "$TX attention next '#{client_name}' >/dev/null 2>&1 || true"
 set -g status-left-length 80
-set -g status-left "#[bold]#{@tx-mark}#[default] #{E:@tx-attention-bar}"
+set -g status-left "#[#{@tx-chip-style}] #{@tx-mark} #[default]#{E:@tx-attention-bar}"
 set-hook -g pane-focus-in {
   if -F '#{m:finished *,#{@tx-attention}}' {
     set -u @tx-attention

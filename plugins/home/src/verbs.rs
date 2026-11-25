@@ -438,11 +438,7 @@ fn open(core: &TxCore, ui: &Ui, pane: &str, client: &str) -> Result<i32, VerbErr
     let choice_path = choice.to_string_lossy();
     let command = tx.shell(&[TUI_VERB, pane, "--popup", "--choice", &choice_path]);
     // -EE: a home that fails keeps its popup open, showing why.
-    let theme = tx_client::theme::active();
-    let title = theme.glyphs.inset_title(
-        tx_client::theme::BorderRole::Frame,
-        &format!("{} home", theme.glyphs.mark),
-    );
+    let title = tx_client::theme::popup_title("home");
     ui.run(&[
         "display-popup",
         "-c",
@@ -456,8 +452,6 @@ fn open(core: &TxCore, ui: &Ui, pane: &str, client: &str) -> Result<i32, VerbErr
         "C",
         "-y",
         "C",
-        "-b",
-        tx_client::theme::BorderRole::Frame.tmux_lines(),
         "-T",
         &title,
         &command,
@@ -492,20 +486,11 @@ struct Popup<'a> {
     height: &'a str,
     y: &'a str,
     title: &'a str,
-    /// Operator form popups (new agent, fork) wear the rounded Operator border; tx tool popups
-    /// inherit the heavy Frame border from `theme.tmux`.
-    form: bool,
 }
 
 fn popup(ui: &Ui, client: &str, spec: &Popup<'_>, command: &str) {
-    let theme = tx_client::theme::active();
-    let border_role = if spec.form {
-        tx_client::theme::BorderRole::Operator
-    } else {
-        tx_client::theme::BorderRole::Frame
-    };
-    let inset_title = theme.glyphs.inset_title(border_role, spec.title);
-    let mut args = vec![
+    let title = tx_client::theme::popup_title(spec.title);
+    let args = [
         "display-popup",
         "-c",
         client,
@@ -518,21 +503,10 @@ fn popup(ui: &Ui, client: &str, spec: &Popup<'_>, command: &str) {
         "C",
         "-y",
         spec.y,
+        "-T",
+        &title,
+        command,
     ];
-    let border_style = if spec.form {
-        let (ok, value) = ui.quiet(&["show-option", "-gv", "@tx-popup-operator-border-style"]);
-        let trimmed = value.trim();
-        (ok && !trimmed.is_empty()).then(|| trimmed.to_owned())
-    } else {
-        None
-    };
-    if spec.form {
-        args.extend(["-b", tx_client::theme::BorderRole::Operator.tmux_lines()]);
-        if let Some(style) = border_style.as_deref() {
-            args.extend(["-S", style]);
-        }
-    }
-    args.extend(["-T", &inset_title, command]);
     if let Err(error) = ui.run(&args) {
         status(ui, client, &format!("tx home: {error}"));
     }
@@ -705,8 +679,7 @@ impl Performer<'_> {
                         width: "94",
                         height: "23",
                         y: "C",
-                        title: " New agent ",
-                        form: true,
+                        title: "new agent",
                     },
                     &tx.shell(&[
                         "_new-agent",
@@ -740,8 +713,7 @@ impl Performer<'_> {
                         width: "118",
                         height: "30",
                         y: "1",
-                        title: " timeline ",
-                        form: false,
+                        title: "timeline",
                     },
                     &tx.shell(&["_timeline-attach"]),
                 );

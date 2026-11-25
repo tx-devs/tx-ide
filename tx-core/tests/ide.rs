@@ -563,7 +563,7 @@ fn disabling_labels_unsets_border_format_on_reload() {
     // The border look stays: it belongs to ide.
     assert_eq!(
         cli.tmux_out(&["show-option", "-gv", "pane-border-lines"]),
-        "heavy"
+        "single"
     );
 }
 
@@ -663,7 +663,7 @@ fn disabling_ide_takes_the_keys_out_of_a_running_server_and_enabling_it_brings_t
     // The rest of the look is the server's until it restarts.
     assert_eq!(
         cli.tmux_out(&["show-option", "-gv", "pane-border-lines"]),
-        "heavy"
+        "single"
     );
     assert_eq!(cli.ok(&["update"]), updated(&[]), "retired once");
 
@@ -1042,7 +1042,7 @@ fn home_pane(cli: &Cli) -> String {
 
 fn home_tui_shown(cli: &Cli) -> bool {
     let screen = home_pane(cli);
-    screen.contains("╋╳") && screen.contains("enter attach")
+    screen.contains(" ended today") && screen.contains("enter attach")
 }
 
 #[test]
@@ -1152,11 +1152,7 @@ fn ui_attach_lands_on_the_home_tui_and_the_assistant_comes_up_behind_it() {
     let assistant_row = || {
         let screen = home_pane(&cli);
         screen.contains("tx-assistant")
-            && (screen.contains("assistant ▖ starting")
-                || screen.contains("assistant ▘ starting")
-                || screen.contains("assistant ▝ starting")
-                || screen.contains("assistant ▗ starting")
-                || screen.contains("assistant ● ready"))
+            && (screen.contains("assistant ◌ starting") || screen.contains("assistant ● ready"))
     };
     assert!(
         cli.wait_for(30, assistant_row),
@@ -1228,11 +1224,7 @@ fn ui_attach_without_the_roles_installed_shows_the_failed_assistant() {
         cli.wait_for(30, || {
             let screen = home_pane(&cli);
             !screen.contains("failed")
-                && (screen.contains("assistant ▖ starting")
-                    || screen.contains("assistant ▘ starting")
-                    || screen.contains("assistant ▝ starting")
-                    || screen.contains("assistant ▗ starting")
-                    || screen.contains("assistant ● ready"))
+                && (screen.contains("assistant ◌ starting") || screen.contains("assistant ● ready"))
         }),
         "the header never left failed:\n{}",
         home_pane(&cli)
@@ -1473,8 +1465,8 @@ fn attach_to_picks_a_pane_by_number_and_enter_attaches_there() {
 
     cli.ok(&["_show", &client, "attach-to", "target", first]);
     assert_eq!(table(), "tx-attach-to");
-    let signal = cli.tmux_out(&["show-option", "-gv", "@tx-signal-style"]);
-    assert!(!signal.is_empty(), "theme never set @tx-signal-style");
+    let signal = cli.tmux_out(&["show-option", "-gv", "@tx-picking-style"]);
+    assert!(!signal.is_empty(), "theme never set @tx-picking-style");
     assert_eq!(border(), signal);
     press(second_index);
     press("9");

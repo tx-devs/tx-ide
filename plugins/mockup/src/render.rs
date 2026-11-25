@@ -9,7 +9,7 @@ use ratatui::text::{Line, Text};
 use ratatui::widgets::{
     Block, BorderType, List, ListState, Paragraph, Row, StatefulWidget, Table, Widget,
 };
-use tx_client::theme::{BorderRole, Role, active};
+use tx_client::theme::{Role, active};
 
 use crate::markup::lines;
 use crate::model::{Choice, Kind, Node, Screen, Size};
@@ -132,7 +132,7 @@ impl Context {
         }
         let block = Block::bordered()
             .border_type(BorderType::Plain)
-            .title(theme.glyphs.inset_title(BorderRole::Content, &title))
+            .title(tx_client::theme::titled(&title))
             .border_style(border);
         let inner = block.inner(area);
         block.render(area, buf);

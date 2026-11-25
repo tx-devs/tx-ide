@@ -66,8 +66,8 @@ pub fn is_text(cell: &Cell) -> bool {
 
 pub const MINIMUM_LIST_ROWS: u16 = 10;
 
-/// Box-drawn Junction "tx" mark, shared with `tx_client::theme::BANNER_UNICODE`.
-pub const LOGO: &[&str] = tx_client::theme::BANNER_UNICODE;
+/// The `tx` logo in pixels, two pixel rows to a cell: [`tx_client::theme::LOGO_PIXELS`].
+pub const LOGO: &[&str] = tx_client::theme::LOGO_PIXELS;
 
 /// (logo box, content area). The logo shows when `area.width >= logo width` and
 /// `area.height >= logo height + 1 (gap) + MINIMUM_LIST_ROWS + 2 (header, footer)`.
@@ -247,7 +247,7 @@ mod tests {
 
     #[test]
     fn the_logo_art_is_within_bounds_with_equal_width_rows() {
-        assert!(LOGO.len() <= 7);
+        assert!(LOGO.len().is_multiple_of(2) && LOGO.len() / 2 <= 7);
         let width = LOGO[0].chars().count();
         assert!(width <= 48);
         assert!(LOGO.iter().all(|row| row.chars().count() == width));

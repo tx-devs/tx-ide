@@ -11,14 +11,6 @@ client_name="$2"
 # shell-command does not expand them, so pass the captured pane and client as literal arguments.
 # Centred on the client screen; the nvim form (the spawn plugin's tx-new-agent.lua) needs 92
 # columns and 21 rows. The popup closes when the form exits; the outcome is on the status line.
-BORDER_STYLE=$(tmux show-option -gv @tx-popup-operator-border-style 2>/dev/null || true)
-INSET_LEFT=$(tmux show-option -gv @tx-operator-inset-left 2>/dev/null || printf '┤')
-INSET_RIGHT=$(tmux show-option -gv @tx-operator-inset-right 2>/dev/null || printf '├')
 printf -v new_agent_command '%s _new-agent %q %q' "$TX" "$pane_id" "$client_name"
-if [ -n "$BORDER_STYLE" ]; then
-  exec tmux display-popup -c "$client_name" -E -w 94 -h 23 -x C -y C -b rounded \
-    -S "$BORDER_STYLE" \
-    -T "${INSET_LEFT} new agent ${INSET_RIGHT}" "$new_agent_command"
-fi
-exec tmux display-popup -c "$client_name" -E -w 94 -h 23 -x C -y C -b rounded \
-  -T "${INSET_LEFT} new agent ${INSET_RIGHT}" "$new_agent_command"
+exec tmux display-popup -c "$client_name" -E -w 94 -h 23 -x C -y C \
+  -T '#[#{@tx-accent-style}] #{@tx-mark}#[default] · new agent ' "$new_agent_command"

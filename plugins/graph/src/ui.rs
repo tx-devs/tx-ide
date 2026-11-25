@@ -20,7 +20,7 @@ use tx_chat::transcript::clock;
 use crate::app::{App, Mode, PULSE_TRAVEL, Purpose};
 use crate::layout;
 use crate::model::{Edge, Graph, Node, NodeState};
-use tx_client::theme::{BorderRole, Role, active};
+use tx_client::theme::{Role, active};
 
 /// Above this share of its window, a context gauge turns signal amber.
 const CONTEXT_WARN: f64 = 0.8;
@@ -167,11 +167,11 @@ fn tokens(count: u64) -> String {
 }
 
 /// The state's glyph at `clock`: the starting quadrant turns at 4 Hz; needs-you ▲ is steady.
-fn glyph(state: NodeState, clock: f64) -> &'static str {
+fn glyph(state: NodeState) -> &'static str {
     let glyphs = active().glyphs;
     match state {
         NodeState::Operator => glyphs.operator,
-        NodeState::Starting => glyphs.starting[(clock * 4.0) as usize % glyphs.starting.len()],
+        NodeState::Starting => glyphs.starting,
         NodeState::Working => glyphs.working,
         NodeState::Idle => glyphs.idle,
         NodeState::Ended => glyphs.ended,
@@ -324,10 +324,7 @@ fn header_line(app: &App) -> Paragraph<'static> {
         (Some(group), Some(tag)) => format!("{group} · tag {tag}"),
     };
     let mut spans = vec![
-        Span::styled(
-            format!(" {} {}", glyphs.mark, app.brand),
-            bold(Role::Accent),
-        ),
+        Span::styled(format!(" {}", app.brand), bold(Role::Accent)),
         Span::styled("  graph  ", dim()),
         Span::styled(scope, bold(Role::Text)),
         Span::styled(format!("   {} · ", counted(agents, "agent")), dim()),
@@ -376,10 +373,10 @@ fn legend_line() -> Paragraph<'static> {
         ]
     };
     let mut spans = vec![Span::raw("  ")];
-    spans.extend(swatch("┏┓", Role::Accent, " selected   "));
-    spans.extend(swatch("┏┓", Role::Working, " working   "));
-    spans.extend(swatch("┏┓", Role::Signal, " needs you   "));
-    spans.extend(swatch("┏┓", Role::Rule, " idle   "));
+    spans.extend(swatch("╭╮", Role::Accent, " selected   "));
+    spans.extend(swatch("╭╮", Role::Working, " working   "));
+    spans.extend(swatch("╭╮", Role::Signal, " needs you   "));
+    spans.extend(swatch("╭╮", Role::Rule, " idle   "));
     spans.extend(swatch("⠉⠒⠤", Role::Info, " messages   "));
     spans.extend(swatch("⠁⠂⠄", Role::Rule, " lineage only"));
     Paragraph::new(Line::from(spans))
@@ -438,12 +435,10 @@ fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
     let graph = &app.graph;
     let node = &graph.nodes[app.selected];
     let theme = active();
-    let title = theme.glyphs.inset_title(
-        BorderRole::Frame,
-        &cut(&node.name, usize::from(area.width.saturating_sub(6))),
-    );
+    let title =
+        tx_client::theme::titled(&cut(&node.name, usize::from(area.width.saturating_sub(6))));
     let block = Block::bordered()
-        .border_type(BorderType::Thick)
+        .border_type(BorderType::Rounded)
         .border_style(bold(Role::Accent))
         .title(Line::styled(title, theme.on_accent_badge()));
     let inner = block.inner(area);
@@ -632,7 +627,7 @@ fn draw_canvas(app: &App, frame: &mut Frame, view: Rect) {
         let rect = app.placement.boxes[index];
         let selected = index == app.selected;
         if app.placement.compact {
-            draw_compact_node(node, app.clock, rect, selected, &mut buffer);
+            draw_compact_node(node, rect, selected, &mut buffer);
         } else {
             draw_node(app, index, rect, selected, &mut buffer);
         }
@@ -1056,24 +1051,13 @@ fn draw_node(app: &App, index: usize, rect: Rect, selected: bool, buffer: &mut B
         bold(state_role(state))
     };
     let room = usize::from(rect.width.saturating_sub(8));
-    let border_role = if state == NodeState::Operator {
-        BorderRole::Operator
-    } else {
-        BorderRole::Frame
-    };
-    let (inset_left, inset_right) = theme.glyphs.inset(border_role);
     let title = Line::from(vec![
-        Span::styled(format!("{inset_left} "), border_style),
-        Span::styled(glyph(state, app.clock), glyph_style),
+        Span::raw(" "),
+        Span::styled(glyph(state), glyph_style),
         Span::styled(format!(" {} ", cut(&node.name, room)), name_style),
-        Span::styled(inset_right, border_style),
     ]);
     let block = Block::bordered()
-        .border_type(if state == NodeState::Operator {
-            BorderType::Rounded
-        } else {
-            BorderType::Thick
-        })
+        .border_type(BorderType::Rounded)
         .border_style(border_style)
         .title(title);
     let inner = block.inner(rect).inner(Margin::new(1, 0));
@@ -1124,7 +1108,7 @@ fn draw_node(app: &App, index: usize, rect: Rect, selected: bool, buffer: &mut B
 }
 
 /// One borderless line: `glyph name`.
-fn draw_compact_node(node: &Node, clock: f64, rect: Rect, selected: bool, buffer: &mut Buffer) {
+fn draw_compact_node(node: &Node, rect: Rect, selected: bool, buffer: &mut Buffer) {
     let name_style = title_style(node, selected);
     let glyph_style = if selected {
         name_style
@@ -1134,7 +1118,7 @@ fn draw_compact_node(node: &Node, clock: f64, rect: Rect, selected: bool, buffer
     let room = usize::from(rect.width.saturating_sub(3));
     Clear.render(rect, buffer);
     Paragraph::new(Line::from(vec![
-        Span::styled(glyph(node.state, clock), glyph_style),
+        Span::styled(glyph(node.state), glyph_style),
         Span::styled(format!(" {:<room$}", cut(&node.name, room)), name_style),
     ]))
     .render(rect, buffer);

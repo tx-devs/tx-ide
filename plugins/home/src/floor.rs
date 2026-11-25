@@ -64,7 +64,7 @@ pub fn hook_command(tx: &str) -> String {
 
 /// What the floor pane shows while it is dead and `_home-perform` works, in place of tmux's
 /// "Pane is dead".
-pub const WORKING: &str = "╋╳ home · working…";
+pub const WORKING: &str = "tx home: working…";
 
 /// The floor among a home's panes: the one marked [`HOME_FLOOR_OPTION`], else (a home never
 /// installed) the first pane of the first window.

@@ -265,7 +265,7 @@ fn draw_lane(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
     } else {
         match lane.state.as_str() {
             "working" => (glyphs.working, theme.style(Role::Working)),
-            "starting" => (glyphs.starting[0], theme.style(Role::Muted)),
+            "starting" => (glyphs.starting, theme.style(Role::Muted)),
             "idle" => (glyphs.idle, theme.style(Role::Muted)),
             _ => ("·", theme.style(Role::Muted)),
         }
@@ -345,7 +345,7 @@ fn draw_lane(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
         );
     }
     if selected {
-        let highlight = theme.selection_style(false);
+        let highlight = theme.selection_style();
         for x in app.geometry.lanes.x..app.geometry.lanes.x + app.geometry.lanes.width {
             if let Some(cell) = buffer.cell_mut((x, y)) {
                 if let Some(bg) = highlight.bg {

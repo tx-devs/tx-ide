@@ -1,13 +1,13 @@
-//! The tx visual identity and theme engine (Junction): mark, state alphabet, three-weight border
-//! grammar, semantic colour roles and single-source distribution to ratatui, tmux, fzf and nvim.
+//! The tx look and its theme: the mark, one glyph per agent state, semantic colour roles, and
+//! one resolved theme handed to ratatui, tmux, fzf and nvim.
 //!
 //! Resolution order:
 //! 1. Colour allowance: non-empty `NO_COLOR`, `TERM=dumb` or `TX_COLORS=none` yields
 //!    [`ColorDepth::None`], where every resolved [`Style`] omits `fg` and `bg` completely
 //!    (avoiding `crossterm 0.29`'s `CSI ; m` reset after modifiers) and keeps only attributes.
-//! 2. Polarity: explicit preset (`tx-dark`, `tx-light`, `terminal`, `tokyo-night`) or a user file
-//!    under `<config>/themes/<name>.yaml`; `auto` selects `tx-dark` on dark terminals, `tx-light`
-//!    on light terminals, and `terminal` when the background polarity is unknown.
+//! 2. Background: the `terminal` theme has fills only on a background the terminal reported
+//!    (tmux's `client_theme`, recorded for the screens started later); a theme file may replace
+//!    roles for dark or light only.
 //! 3. Colour depth: `TX_COLORS` (`truecolor` | `256` | `16` | `none`), legacy `TX_HOME_COLORS=256`,
 //!    `COLORTERM` (`truecolor` | `24bit`), or `TERM`.
 
@@ -17,22 +17,30 @@ use std::sync::OnceLock;
 
 use ratatui_core::style::{Color, Modifier, Style};
 use serde::Deserialize;
-use tx_core::host::user_config::{self, GlyphTier, StatusStyle, ThemeSettings};
+use tx_core::host::user_config::{self, GlyphTier, ThemeSettings};
 
 use crate::render::tag_hash;
 
-/// Canonical two-cell Junction sigil (`U+254B`, `U+2573`).
-pub const MARK_UNICODE: &str = "╋╳";
-pub const MARK_ASCII: &str = "tx";
-/// Tight contextual one-cell sigil (`U+254B`), used only where `╋╳` is already on screen.
-pub const MARK_CELL_UNICODE: &str = "╋";
-pub const MARK_CELL_ASCII: &str = "t";
+/// The mark at text size: the name, in letters.
+pub const MARK: &str = "tx";
 
-/// Four-row box-drawn Junction `tx` banner (9×4, fits `home-backdrop`'s <= 7×48 contract).
-pub const BANNER_UNICODE: &[&str] = &[" ╻       ", "━╋━━  ╲ ╱", " ┃     ╳ ", " ┗━━  ╱ ╲"];
-
-/// Four-row ASCII fallback banner (9×4).
-pub const BANNER_ASCII: &[&str] = &[" |       ", "-+--  \\ /", " |     X ", " +--  / \\"];
+/// The mark as a logo: `tx` in pixels, two pixel rows to a cell (`#` lit, `.` clear). Drawn with
+/// half-blocks, which is what the home's backdrops are made of, so it sits in a scene instead of
+/// on it.
+pub const LOGO_PIXELS: &[&str] = &[
+    "..##................",
+    "..##................",
+    "########..##......##",
+    "########..###....###",
+    "..##.......###..###.",
+    "..##........######..",
+    "..##.........####...",
+    "..##........######..",
+    "..##..##...###..###.",
+    "..######..###....###",
+    "...####...##......##",
+    "....................",
+];
 
 /// Terminal background polarity, reported by tmux's `#{client_theme}` or overridden by config.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -132,33 +140,25 @@ impl ColorDepth {
     }
 }
 
-/// The three-weight border grammar: heavy = tx's frame, light = content, rounded = operator.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BorderRole {
-    Frame,
-    Content,
-    Operator,
+/// The lines of every tx popup: one light rounded border, the terminal's own weight.
+pub const POPUP_LINES: &str = "rounded";
+
+/// A title as it sits in a border: a space each side, nothing else.
+pub fn titled(title: &str) -> String {
+    format!(" {} ", title.trim())
 }
 
-impl BorderRole {
-    /// tmux `display-popup -b` / `pane-border-lines` name for this role.
-    pub fn tmux_lines(self) -> &'static str {
-        match self {
-            Self::Frame => "heavy",
-            Self::Content => "single",
-            Self::Operator => "rounded",
-        }
-    }
+/// A popup's title, as a tmux format: the mark in the accent, then what the popup is. The
+/// plugins' scripts and key fragments write the same string.
+pub fn popup_title(name: &str) -> String {
+    format!("#[#{{@tx-accent-style}}] #{{@tx-mark}}#[default] · {name} ")
 }
 
 /// Unified glyph alphabet: one shape per state across every plugin, independent of colour.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Glyphs {
-    pub mark: &'static str,
-    pub mark_cell: &'static str,
     pub working: &'static str,
-    pub starting: [&'static str; 4],
-    pub working_bar: [&'static str; 4],
+    pub starting: &'static str,
     pub needs_you: &'static str,
     pub idle: &'static str,
     pub ended: &'static str,
@@ -169,21 +169,11 @@ pub struct Glyphs {
     pub prompt: &'static str,
     pub ellipsis: &'static str,
     pub arrow_right: &'static str,
-    /// The tees a title sits between on a heavy line.
-    pub inset_left: &'static str,
-    pub inset_right: &'static str,
-    /// The same on a light or rounded line.
-    pub inset_light_left: &'static str,
-    pub inset_light_right: &'static str,
-    pub rule_heavy: &'static str,
 }
 
 pub const UNICODE_GLYPHS: Glyphs = Glyphs {
-    mark: MARK_UNICODE,
-    mark_cell: MARK_CELL_UNICODE,
     working: "●",
-    starting: ["▖", "▘", "▝", "▗"],
-    working_bar: ["━───", "─━──", "──━─", "───━"],
+    starting: "◌",
     needs_you: "▲",
     idle: "○",
     ended: "×",
@@ -194,19 +184,11 @@ pub const UNICODE_GLYPHS: Glyphs = Glyphs {
     prompt: "›",
     ellipsis: "…",
     arrow_right: "→",
-    inset_left: "┫",
-    inset_right: "┣",
-    inset_light_left: "┤",
-    inset_light_right: "├",
-    rule_heavy: "━",
 };
 
 pub const ASCII_GLYPHS: Glyphs = Glyphs {
-    mark: MARK_ASCII,
-    mark_cell: MARK_CELL_ASCII,
     working: "*",
-    starting: ["-", "\\", "|", "/"],
-    working_bar: ["=---", "-=--", "--=-", "---="],
+    starting: "~",
     needs_you: "!",
     idle: "o",
     ended: "x",
@@ -217,11 +199,6 @@ pub const ASCII_GLYPHS: Glyphs = Glyphs {
     prompt: ">",
     ellipsis: "...",
     arrow_right: "->",
-    inset_left: "[",
-    inset_right: "]",
-    inset_light_left: "[",
-    inset_light_right: "]",
-    rule_heavy: "-",
 };
 
 impl Glyphs {
@@ -230,30 +207,6 @@ impl Glyphs {
             GlyphTier::Unicode => UNICODE_GLYPHS,
             GlyphTier::Ascii => ASCII_GLYPHS,
         }
-    }
-
-    pub const fn banner(tier: GlyphTier) -> &'static [&'static str] {
-        match tier {
-            GlyphTier::Unicode => BANNER_UNICODE,
-            GlyphTier::Ascii => BANNER_ASCII,
-        }
-    }
-
-    /// The tees that match `role`'s line weight: heavy for the frame, light otherwise.
-    pub fn inset(self, role: BorderRole) -> (&'static str, &'static str) {
-        match role {
-            BorderRole::Frame => (self.inset_left, self.inset_right),
-            BorderRole::Content | BorderRole::Operator => {
-                (self.inset_light_left, self.inset_light_right)
-            }
-        }
-    }
-
-    /// A title set into a border of `role`: `┫ title ┣` on a heavy line, `┤ title ├` on a light
-    /// or rounded one, `[ title ]` in ASCII.
-    pub fn inset_title(self, role: BorderRole, title: &str) -> String {
-        let (left, right) = self.inset(role);
-        format!("{left} {} {right}", title.trim())
     }
 }
 
@@ -322,6 +275,29 @@ impl Ansi16 {
             Self::BrightMagenta => Some(Color::LightMagenta),
             Self::BrightCyan => Some(Color::LightCyan),
             Self::BrightWhite => Some(Color::White),
+        }
+    }
+
+    /// Its number among the terminal's sixteen; `None` for the default colour.
+    fn index(self) -> Option<u8> {
+        match self {
+            Self::Default => None,
+            Self::Black => Some(0),
+            Self::Red => Some(1),
+            Self::Green => Some(2),
+            Self::Yellow => Some(3),
+            Self::Blue => Some(4),
+            Self::Magenta => Some(5),
+            Self::Cyan => Some(6),
+            Self::White => Some(7),
+            Self::BrightBlack => Some(8),
+            Self::BrightRed => Some(9),
+            Self::BrightGreen => Some(10),
+            Self::BrightYellow => Some(11),
+            Self::BrightBlue => Some(12),
+            Self::BrightMagenta => Some(13),
+            Self::BrightCyan => Some(14),
+            Self::BrightWhite => Some(15),
         }
     }
 
@@ -662,7 +638,6 @@ pub enum Role {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Theme {
     pub name: String,
-    pub status_style: StatusStyle,
     pub glyph_tier: GlyphTier,
     pub glyphs: Glyphs,
     pub depth: ColorDepth,
@@ -704,6 +679,19 @@ pub enum ThemeError {
     File { path: String, reason: String },
 }
 
+/// What differs in tmux between a theme with fills and one without.
+struct TmuxLayout {
+    lines: &'static str,
+    border: String,
+    border_active: String,
+    header: String,
+    header_active: String,
+    attention: String,
+    window_current: String,
+    /// The active pane's border while attach-to picks a pane.
+    picking: String,
+}
+
 /// A theme of the user's, `<config>/themes/<name>.yaml`: a shipped theme (`base`) with some
 /// roles replaced, for both backgrounds (`colors`) or for one (`dark`, `light`).
 #[derive(Debug, Deserialize)]
@@ -720,196 +708,88 @@ struct ThemeFile {
 }
 
 fn automatic_name() -> String {
-    "auto".to_owned()
+    "terminal".to_owned()
 }
 
 impl Theme {
-    /// Shipped dark Junction theme: achromatic frame with amber `signal`, restrained Verdigris
-    /// Teal accent inside tx's own TUI screens.
-    pub fn tx_dark(depth: ColorDepth) -> Self {
-        Self {
-            name: "tx-dark".to_owned(),
-            status_style: StatusStyle::Rule,
-            glyph_tier: GlyphTier::Unicode,
-            glyphs: UNICODE_GLYPHS,
-            depth,
-            polarity: Polarity::Dark,
-            text: RoleSpec::default_role(),
-            muted: RoleSpec {
-                dim: true,
+    /// The default look: every role is the terminal's own foreground, one of its sixteen colours
+    /// or an attribute, so tx wears whatever theme the terminal has. A known background adds two
+    /// quiet fills, taken from the neutral end of the 256-colour palette: `surface` (the status
+    /// bar, a pane's header, the home's card) and `selection` (the selected row, the active
+    /// header). With an unknown background there are no fills: reverse video and lines instead.
+    pub fn terminal(polarity: Polarity, depth: ColorDepth) -> Self {
+        let named = |ansi16: Ansi16| RoleSpec {
+            ansi16,
+            ..RoleSpec::default_role()
+        };
+        let fill = |dark: (Ansi16, u8), light: (Ansi16, u8)| {
+            let (ansi16, ansi256) = match polarity {
+                Polarity::Dark => dark,
+                Polarity::Light => light,
+                Polarity::Unknown => return RoleSpec::default_role(),
+            };
+            RoleSpec {
+                ansi256: Some(ansi256),
+                ansi16,
                 ..RoleSpec::default_role()
-            },
-            rule: RoleSpec {
-                rgb: Some((74, 83, 98)),
-                ansi256: Some(240),
-                ansi16: Ansi16::Default,
-                dim: true,
-                ..RoleSpec::default_role()
-            },
-            rule_active: RoleSpec {
-                bold: true,
-                ..RoleSpec::default_role()
-            },
-            signal: RoleSpec {
-                rgb: Some((224, 175, 104)),
-                ansi256: Some(179),
-                ansi16: Ansi16::Yellow,
-                bold: true,
-                reverse_on_no_color: true,
-                ..RoleSpec::default_role()
-            },
-            accent: RoleSpec {
-                rgb: Some((50, 184, 172)),
-                ansi256: Some(73),
-                ansi16: Ansi16::Cyan,
-                ..RoleSpec::default_role()
-            },
-            on_accent: RoleSpec::with_rgb((14, 19, 22), 233, Ansi16::Black, false, false),
-            working: RoleSpec::with_rgb((98, 195, 112), 71, Ansi16::Green, false, false),
-            info: RoleSpec::with_rgb((94, 194, 230), 74, Ansi16::Cyan, false, false),
-            failed: RoleSpec {
-                rgb: Some((229, 107, 111)),
-                ansi256: Some(167),
-                ansi16: Ansi16::Red,
-                reverse_on_no_color: true,
-                ..RoleSpec::default_role()
-            },
-            surface: RoleSpec::with_rgb((18, 21, 25), 234, Ansi16::Black, false, false),
-            selection: RoleSpec {
-                rgb: Some((38, 46, 56)),
-                ansi256: Some(236),
-                ansi16: Ansi16::Default,
-                reverse_on_16: true,
-                reverse_on_no_color: true,
-                ..RoleSpec::default_role()
-            },
-            tag_palette: TAG_CUBE_DARK,
-        }
-    }
-
-    /// Shipped light Junction theme: high-contrast ochre `signal` (reverse in 16-colour mode so
-    /// ANSI yellow never vanishes on white) and deep Verdigris Teal inside tx's own screens.
-    pub fn tx_light(depth: ColorDepth) -> Self {
-        Self {
-            name: "tx-light".to_owned(),
-            status_style: StatusStyle::Rule,
-            glyph_tier: GlyphTier::Unicode,
-            glyphs: UNICODE_GLYPHS,
-            depth,
-            polarity: Polarity::Light,
-            text: RoleSpec::default_role(),
-            muted: RoleSpec {
-                dim: true,
-                ..RoleSpec::default_role()
-            },
-            rule: RoleSpec {
-                rgb: Some((158, 168, 180)),
-                ansi256: Some(247),
-                ansi16: Ansi16::Default,
-                dim: true,
-                ..RoleSpec::default_role()
-            },
-            rule_active: RoleSpec {
-                bold: true,
-                ..RoleSpec::default_role()
-            },
-            signal: RoleSpec {
-                rgb: Some((154, 91, 0)),
-                ansi256: Some(94),
-                ansi16: Ansi16::Default,
-                bold: true,
-                reverse_on_16: true,
-                reverse_on_no_color: true,
-                ..RoleSpec::default_role()
-            },
-            accent: RoleSpec {
-                rgb: Some((13, 122, 114)),
-                ansi256: Some(30),
-                ansi16: Ansi16::Cyan,
-                ..RoleSpec::default_role()
-            },
-            on_accent: RoleSpec::with_rgb((247, 250, 250), 231, Ansi16::White, false, false),
-            working: RoleSpec::with_rgb((31, 122, 56), 28, Ansi16::Green, false, false),
-            info: RoleSpec::with_rgb((14, 107, 148), 24, Ansi16::Cyan, false, false),
-            failed: RoleSpec {
-                rgb: Some((194, 59, 66)),
-                ansi256: Some(131),
-                ansi16: Ansi16::Red,
-                reverse_on_no_color: true,
-                ..RoleSpec::default_role()
-            },
-            surface: RoleSpec::with_rgb((232, 236, 239), 254, Ansi16::White, false, false),
-            selection: RoleSpec {
-                rgb: Some((220, 227, 234)),
-                ansi256: Some(253),
-                ansi16: Ansi16::Default,
-                reverse_on_16: true,
-                reverse_on_no_color: true,
-                ..RoleSpec::default_role()
-            },
-            tag_palette: TAG_CUBE_LIGHT,
-        }
-    }
-
-    /// Pure terminal-inheriting theme: uses only the terminal's default foreground, bold, dim,
-    /// reverse, and safe ANSI slots. Used when explicitly chosen or when background polarity is
-    /// unknown under `auto`.
-    pub fn terminal(depth: ColorDepth) -> Self {
+            }
+        };
         Self {
             name: "terminal".to_owned(),
-            status_style: StatusStyle::Rule,
             glyph_tier: GlyphTier::Unicode,
             glyphs: UNICODE_GLYPHS,
             depth,
-            polarity: Polarity::Unknown,
+            polarity,
             text: RoleSpec::default_role(),
             muted: RoleSpec {
                 dim: true,
                 ..RoleSpec::default_role()
             },
-            rule: RoleSpec {
-                dim: true,
-                ..RoleSpec::default_role()
+            rule: match polarity {
+                Polarity::Unknown => RoleSpec {
+                    dim: true,
+                    ..RoleSpec::default_role()
+                },
+                Polarity::Dark | Polarity::Light => named(Ansi16::BrightBlack),
             },
-            rule_active: RoleSpec {
-                bold: true,
-                ..RoleSpec::default_role()
+            rule_active: named(Ansi16::Blue),
+            // ANSI yellow is the least readable of the sixteen on a light background.
+            signal: match polarity {
+                Polarity::Dark => RoleSpec {
+                    bold: true,
+                    reverse_on_no_color: true,
+                    ..named(Ansi16::Yellow)
+                },
+                Polarity::Light | Polarity::Unknown => RoleSpec {
+                    bold: true,
+                    reversed: true,
+                    reverse_on_no_color: true,
+                    ..RoleSpec::default_role()
+                },
             },
-            signal: RoleSpec {
-                ansi16: Ansi16::Default,
-                bold: true,
-                reversed: true,
-                reverse_on_16: true,
-                reverse_on_no_color: true,
-                ..RoleSpec::default_role()
+            accent: named(Ansi16::Blue),
+            on_accent: match polarity {
+                Polarity::Dark => named(Ansi16::Black),
+                Polarity::Light => named(Ansi16::BrightWhite),
+                Polarity::Unknown => RoleSpec::default_role(),
             },
-            accent: RoleSpec {
-                ansi16: Ansi16::Cyan,
-                bold: true,
-                ..RoleSpec::default_role()
-            },
-            on_accent: RoleSpec::default_role(),
-            working: RoleSpec {
-                ansi16: Ansi16::Green,
-                ..RoleSpec::default_role()
-            },
-            info: RoleSpec {
-                ansi16: Ansi16::Cyan,
-                ..RoleSpec::default_role()
-            },
+            working: named(Ansi16::Green),
+            info: named(Ansi16::Cyan),
             failed: RoleSpec {
-                ansi16: Ansi16::Red,
                 reverse_on_no_color: true,
-                ..RoleSpec::default_role()
+                ..named(Ansi16::Red)
             },
-            surface: RoleSpec::default_role(),
+            surface: fill((Ansi16::Black, 0), (Ansi16::White, 7)),
             selection: RoleSpec {
-                reversed: true,
+                reversed: polarity == Polarity::Unknown,
                 reverse_on_16: true,
                 reverse_on_no_color: true,
-                ..RoleSpec::default_role()
+                ..fill((Ansi16::Default, 236), (Ansi16::Default, 254))
             },
-            tag_palette: TAG_CUBE_DARK,
+            tag_palette: match polarity {
+                Polarity::Light => TAG_CUBE_LIGHT,
+                Polarity::Dark | Polarity::Unknown => TAG_CUBE_DARK,
+            },
         }
     }
 
@@ -917,7 +797,6 @@ impl Theme {
     pub fn tokyo_night(depth: ColorDepth) -> Self {
         Self {
             name: "tokyo-night".to_owned(),
-            status_style: StatusStyle::Rule,
             glyph_tier: GlyphTier::Unicode,
             glyphs: UNICODE_GLYPHS,
             depth,
@@ -974,7 +853,6 @@ impl Theme {
         depth: ColorDepth,
     ) -> Result<Self, ThemeError> {
         let mut theme = Self::from_name(&settings.name, config_dir, polarity, depth)?;
-        theme.status_style = settings.status_style;
         theme.glyph_tier = settings.glyphs;
         theme.glyphs = Glyphs::for_tier(settings.glyphs);
         theme.apply_overrides(&settings.colors)?;
@@ -1002,16 +880,6 @@ impl Theme {
         Self::load(&core.config().directories.config, polarity, depth)
     }
 
-    /// What `auto` means: the designed theme for a known background, the terminal's own colours
-    /// for an unknown one.
-    pub fn automatic(polarity: Polarity, depth: ColorDepth) -> Self {
-        match polarity {
-            Polarity::Dark => Self::tx_dark(depth),
-            Polarity::Light => Self::tx_light(depth),
-            Polarity::Unknown => Self::terminal(depth),
-        }
-    }
-
     fn from_name(
         name: &str,
         config_dir: &Path,
@@ -1019,10 +887,7 @@ impl Theme {
         depth: ColorDepth,
     ) -> Result<Self, ThemeError> {
         match name {
-            "auto" => Ok(Self::automatic(polarity, depth)),
-            "tx-dark" => Ok(Self::tx_dark(depth)),
-            "tx-light" => Ok(Self::tx_light(depth)),
-            "terminal" => Ok(Self::terminal(depth)),
+            "terminal" => Ok(Self::terminal(polarity, depth)),
             "tokyo-night" => Ok(Self::tokyo_night(depth)),
             custom => {
                 let path = config_dir.join("themes").join(format!("{custom}.yaml"));
@@ -1107,45 +972,35 @@ impl Theme {
         self.spec(role).color(self.depth)
     }
 
-    /// Row selection style for list/table TUIs. Over an animated backdrop, uses a solid accent
-    /// bar; otherwise uses the theme's subtle selection background (or reverse video under
-    /// `terminal`, 16-colour or `NO_COLOR`).
-    pub fn selection_style(&self, over_backdrop: bool) -> Style {
-        if self.depth == ColorDepth::None || self.depth == ColorDepth::Ansi16 {
-            return Style::new().add_modifier(Modifier::REVERSED);
-        }
-        if over_backdrop {
-            if let Some(background) = self.color(Role::Accent) {
-                let mut style = Style::new().bg(background);
-                if let Some(foreground) = self.color(Role::OnAccent) {
-                    style = style.fg(foreground);
-                }
-                return style;
-            }
-            return Style::new().add_modifier(Modifier::REVERSED);
-        }
-        if self.selection.reversed {
-            return Style::new().add_modifier(Modifier::REVERSED);
-        }
+    /// The selected row of a list or a table: the theme's quiet fill, or reverse video where
+    /// there is none (an unknown background, sixteen colours, no colour).
+    pub fn selection_style(&self) -> Style {
         match self.color(Role::Selection) {
-            Some(background) => Style::new().bg(background),
-            None => Style::new().add_modifier(Modifier::REVERSED),
+            Some(background) if !self.selection.reversed => Style::new().bg(background),
+            _ => Style::new().add_modifier(Modifier::REVERSED),
         }
     }
 
-    /// Text drawn on an accent-filled badge (e.g. graph sidebar title).
+    /// The mark as a chip, and any text on an accent fill: reverse video where the theme has no
+    /// colour for one of the two.
     pub fn on_accent_badge(&self) -> Style {
-        if self.depth == ColorDepth::None || self.depth == ColorDepth::Ansi16 {
-            return Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED);
-        }
         match (self.color(Role::Accent), self.color(Role::OnAccent)) {
-            (Some(background), Some(foreground)) => Style::new()
-                .fg(foreground)
-                .bg(background)
-                .add_modifier(Modifier::BOLD),
-            (Some(background), None) => Style::new().bg(background).add_modifier(Modifier::BOLD),
+            (Some(background), Some(foreground)) if self.depth != ColorDepth::Ansi16 => {
+                Style::new()
+                    .fg(foreground)
+                    .bg(background)
+                    .add_modifier(Modifier::BOLD)
+            }
             _ => Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED),
         }
+    }
+
+    /// Whether the theme has its two fills at this depth: bars and chips where it does, lines
+    /// and reverse video where it does not.
+    pub fn has_fills(&self) -> bool {
+        !self.selection.reversed
+            && self.color(Role::Surface).is_some()
+            && self.color(Role::Selection).is_some()
     }
 
     /// Maps an arbitrary `Color` (such as a GitHub label or backdrop pixel) down to `self.depth`.
@@ -1231,187 +1086,182 @@ impl Theme {
         }
     }
 
-    /// fzf `--color=...` or `--no-color` argument matching the active theme.
+    /// fzf's `--color=…` argument for this theme, or `--no-color`.
     pub fn fzf_color_arg(&self, with_surface_bg: bool) -> String {
         if self.depth == ColorDepth::None {
             return "--no-color".to_owned();
         }
-        let accent = fzf_value(self.spec(Role::Accent), self.depth);
-        let text = fzf_value(self.spec(Role::Text), self.depth);
-        let muted = fzf_value(self.spec(Role::Muted), self.depth);
-        let selection = fzf_value(self.spec(Role::Selection), self.depth);
-        let mut parts = Vec::new();
-        if with_surface_bg && let Some(surface) = fzf_value(self.spec(Role::Surface), self.depth) {
-            parts.push(format!("bg:{surface}"));
-        }
-        if let Some(color) = muted.as_deref() {
-            parts.push(format!("fg:{color}"));
-            parts.push(format!("header:{color}"));
-            parts.push(format!("footer:{color}"));
-            parts.push(format!("prompt:{color}"));
-        }
-        if let Some(color) = text.as_deref() {
-            parts.push(format!("query:{color}"));
-            parts.push(format!("fg+:{color}:regular"));
-        }
-        if let Some(color) = accent.as_deref() {
-            parts.push(format!("pointer:{color}"));
-            parts.push(format!("hl:{color}"));
-            parts.push(format!("hl+:{color}"));
-        }
-        if let Some(color) = selection.as_deref() {
-            parts.push(format!("bg+:{color}:regular"));
-        }
-        if parts.is_empty() {
-            "--color=16".to_owned()
+        let color = |role: Role| fzf_value(self.spec(role), self.depth);
+        let muted = format!("{}:dim", color(Role::Muted));
+        let accent = color(Role::Accent);
+        let mut parts = vec![
+            format!("fg:{muted}"),
+            format!("header:{muted}"),
+            format!("footer:{muted}"),
+            format!("prompt:{accent}"),
+            format!("query:{}", color(Role::Text)),
+            format!("pointer:{accent}"),
+            format!("hl:{accent}"),
+            format!("hl+:{accent}"),
+        ];
+        if self.has_fills() {
+            parts.push(format!("fg+:{}:regular", color(Role::Text)));
+            parts.push(format!("bg+:{}:regular", color(Role::Selection)));
+            if with_surface_bg {
+                parts.push(format!("bg:{}", color(Role::Surface)));
+            }
         } else {
-            format!("--color={}", parts.join(","))
+            parts.push("fg+:-1:reverse".to_owned());
         }
+        format!("--color={}", parts.join(","))
     }
 
-    /// Generates `<data>/conf/theme.tmux` defining every tmux visual option in one place.
-    ///
-    /// Keeps native `status-left`, `window-status-format`, `window-status-current-format` and
-    /// `status-right` intact so users and plugins (`attention.tmux`) customize segments freely.
+    /// Generates `<data>/conf/theme.tmux`: every tmux visual option, in one place. tmux's own
+    /// `status-left`, window formats and `status-right` stay slots, so the user and the plugins
+    /// (`attention.tmux`) fill them freely; the styles they refer to are the `@tx-*` options.
     pub fn tmux_conf(&self) -> String {
-        let glyphs = self.glyphs;
-        let mark = glyphs.mark;
-        let rule_style = self.tmux_fg_style(Role::Rule);
-        let rule_active_style = self.tmux_fg_style(Role::RuleActive);
-        let signal_style = self.tmux_fg_style(Role::Signal);
-        let muted_style = self.tmux_fg_style(Role::Muted);
-        let text_style = self.tmux_fg_style(Role::Text);
-        let surface_bg = self.tmux_color(Role::Surface);
-        let status_bg = match self.status_style {
-            StatusStyle::Rule => "default".to_owned(),
-            StatusStyle::Bar => surface_bg.clone(),
+        let muted = self.tmux_fg_style(Role::Muted);
+        let signal = self.tmux_fg_style(Role::Signal);
+        let accent = format!("{},bold", self.tmux_fg_style(Role::Accent));
+        let surface = self.tmux_color(Role::Surface);
+        let selection = self.tmux_color(Role::Selection);
+        let chip = match (self.color(Role::Accent), self.color(Role::OnAccent)) {
+            (Some(_), Some(_)) if self.depth != ColorDepth::Ansi16 => format!(
+                "fg={},bg={},bold",
+                self.tmux_color(Role::OnAccent),
+                self.tmux_color(Role::Accent)
+            ),
+            _ => "fg=default,bold,reverse".to_owned(),
         };
-        let status_style = format!("fg={},bg={status_bg}", self.tmux_color(Role::Text));
-        let popup_style = format!("fg={},bg={surface_bg}", self.tmux_color(Role::Text));
-        let popup_border_style =
-            format!("fg={},bg={surface_bg}", self.tmux_color(Role::RuleActive));
-        let operator_border_style =
-            format!("fg={},bg={surface_bg}", self.tmux_color(Role::RuleActive));
-
-        let active_window_format = format!("{} #I:#W {}", glyphs.inset_left, glyphs.inset_right);
-        let window_current_style = if self.depth == ColorDepth::None {
-            "bold".to_owned()
-        } else {
-            rule_active_style.clone()
-        };
-
-        let status_format_lines = match self.status_style {
-            StatusStyle::Rule => {
-                let rule_char = glyphs.rule_heavy;
-                // tmux's own window list, with its styles and its clickable ranges.
-                let windows = "#{W:#[range=window|#{window_index} #{E:window-status-style}]#{T:window-status-format}#[norange default],#[range=window|#{window_index} #{E:window-status-current-style}]#{T:window-status-current-format}#[norange default]}";
-                let pulse =
-                    "#{?@tx-pulse,#[#{@tx-rule-active-style}]#{@tx-pulse}#[#{@tx-rule-style}],}";
-                let fill = format!(
-                    "#{{R:{rule_char},#{{e|-:#{{e|-:#{{e|-:#{{e|-:#{{client_width}},#{{w:#{{T:status-left}}}}}},#{{w:#{{E:@tx-windows}}}}}},#{{w:#{{@tx-pulse}}}}}},#{{w:#{{T:status-right}}}}}}}}"
-                );
-                format!(
-                    "set -g @tx-windows \"{windows}\"\n\
-                     set -g status-format[0] \"#[align=left range=left #{{E:status-left-style}}]#{{T:status-left}}#[norange default]#{{E:@tx-windows}}#[#{{@tx-rule-style}}]{pulse}{fill}#[default range=right #{{E:status-right-style}}]#{{T:status-right}}#[norange default]\"\n"
-                )
+        // With fills a pane's border is a bar: a header row and a blank divider. Without them
+        // it is a light line.
+        let layout = if self.has_fills() {
+            TmuxLayout {
+                lines: "spaces",
+                border: format!("bg={surface}"),
+                border_active: format!("bg={selection}"),
+                header: format!("fg=default,bg={surface}"),
+                header_active: format!("fg=default,bg={selection}"),
+                attention: format!("{signal},bg={selection}"),
+                window_current: format!("fg=default,bg={selection},bold"),
+                picking: format!(
+                    "fg={},bg={},bold",
+                    self.tmux_color(Role::OnAccent),
+                    self.tmux_color(Role::Signal)
+                ),
             }
-            StatusStyle::Bar => "set -gu status-format\n".to_owned(),
+        } else {
+            TmuxLayout {
+                lines: "single",
+                border: self.tmux_fg_style(Role::Rule),
+                border_active: self.tmux_fg_style(Role::RuleActive),
+                header: muted.clone(),
+                header_active: "fg=default,bold".to_owned(),
+                attention: signal.clone(),
+                window_current: "fg=default,bold,reverse".to_owned(),
+                picking: signal.clone(),
+            }
         };
-
         format!(
             "# Generated by `tx update` / `tx _theme-apply` (theme: {name}).\n\
              set -g @tx-theme \"{name}\"\n\
-             set -g @tx-mark \"{mark}\"\n\
-             set -g @tx-inset-left \"{inset_left}\"\n\
-             set -g @tx-inset-right \"{inset_right}\"\n\
-             set -g @tx-operator-inset-left \"{operator_inset_left}\"\n\
-             set -g @tx-operator-inset-right \"{operator_inset_right}\"\n\
-             set -g @tx-rule-style \"{rule_style}\"\n\
-             set -g @tx-rule-active-style \"{rule_active_style}\"\n\
-             set -g @tx-signal-style \"{signal_style}\"\n\
-             set -g @tx-muted-style \"{muted_style}\"\n\
-             set -g @tx-text-style \"{text_style}\"\n\
-             set -g @tx-surface-bg \"{surface_bg}\"\n\
-             set -g @tx-popup-border-style \"{popup_border_style}\"\n\
-             set -g @tx-popup-operator-border-style \"{operator_border_style}\"\n\
-             set -g status-style \"{status_style}\"\n\
-             setw -g window-status-format \" #I:#W \"\n\
-             setw -g window-status-current-format \"{active_window_format}\"\n\
+             set -g @tx-mark \"{MARK}\"\n\
+             set -g @tx-chip-style \"{chip}\"\n\
+             set -g @tx-accent-style \"{accent}\"\n\
+             set -g @tx-muted-style \"{muted}\"\n\
+             set -g @tx-signal-style \"{signal}\"\n\
+             set -g @tx-working-style \"{working}\"\n\
+             set -g @tx-attention-style \"{attention}\"\n\
+             set -g @tx-header-style \"{header}\"\n\
+             set -g @tx-header-active-style \"{header_active}\"\n\
+             set -g @tx-picking-style \"{picking}\"\n\
+             set -g status-style \"fg=default,bg={surface}\"\n\
+             set -gu status-format\n\
+             setw -g window-status-format \" #I #W \"\n\
+             setw -g window-status-current-format \" #I #W \"\n\
              setw -g window-status-separator \"\"\n\
-             setw -g window-status-style \"{muted_style}\"\n\
-             setw -g window-status-current-style \"{window_current_style}\"\n\
-             set -g pane-border-lines {frame_lines}\n\
-             set -g pane-border-indicators both\n\
-             set -g pane-border-style \"{rule_style}\"\n\
-             set -g pane-active-border-style \"{rule_active_style}\"\n\
-             set -g popup-border-lines {frame_lines}\n\
-             set -g popup-style \"{popup_style}\"\n\
-             set -g popup-border-style \"{popup_border_style}\"\n\
+             setw -g window-status-style \"{muted}\"\n\
+             setw -g window-status-current-style \"{window_current}\"\n\
+             set -g pane-border-lines {lines}\n\
+             set -g pane-border-indicators off\n\
+             set -g pane-border-style \"{border}\"\n\
+             set -g pane-active-border-style \"{border_active}\"\n\
+             set -g popup-border-lines {POPUP_LINES}\n\
+             set -g popup-style \"fg=default,bg=default\"\n\
+             set -g popup-border-style \"{popup_border}\"\n\
              set -g set-titles on\n\
-             set -g set-titles-string \"#{{@tx-mark}} #S\"\n\
-             {status_format_lines}",
+             set -g set-titles-string \"#{{@tx-mark}} · #S\"\n",
             name = self.name,
-            inset_left = glyphs.inset_left,
-            inset_right = glyphs.inset_right,
-            operator_inset_left = glyphs.inset_light_left,
-            operator_inset_right = glyphs.inset_light_right,
-            frame_lines = BorderRole::Frame.tmux_lines(),
+            lines = layout.lines,
+            border = layout.border,
+            border_active = layout.border_active,
+            header = layout.header,
+            header_active = layout.header_active,
+            attention = layout.attention,
+            window_current = layout.window_current,
+            picking = layout.picking,
+            popup_border = self.tmux_fg_style(Role::RuleActive),
+            working = self.tmux_fg_style(Role::Working),
         )
     }
 
-    /// Generates `<data>/conf/theme.lua` for Neovim forms (`plugins/spawn/nvim/tx-new-agent.lua`).
+    /// Generates `<data>/conf/theme.lua` for the nvim forms (`plugins/spawn/nvim/tx-new-agent.lua`):
+    /// each role as highlight attributes, 24-bit (`fg`, `bg`) where the theme has them and the
+    /// terminal's palette (`ctermfg`, `ctermbg`) otherwise. `nil` is the terminal's default.
     pub fn nvim_lua(&self) -> String {
-        let lua_hex = |role: Role| match (self.depth, self.spec(role).hex()) {
-            (ColorDepth::None, _) => "nil".to_owned(),
-            (_, Some(hex)) => format!("\"{hex}\""),
-            (_, None) => "nil".to_owned(),
+        let attributes = |role: Role, ground: &str| {
+            let spec = self.spec(role);
+            if self.depth == ColorDepth::None {
+                return "nil".to_owned();
+            }
+            match (spec.hex(), spec.ansi256.or(spec.ansi16.index())) {
+                (Some(hex), _) => format!("{{ {ground} = \"{hex}\" }}"),
+                (None, Some(index)) => format!("{{ cterm{ground} = {index} }}"),
+                (None, None) => "nil".to_owned(),
+            }
         };
         format!(
             "-- Generated by `tx update` (theme: {name}).\n\
              return {{\n\
              \x20 name = \"{name}\",\n\
-             \x20 mark = \"{mark}\",\n\
-             \x20 accent = {accent},\n\
-             \x20 signal = {signal},\n\
-             \x20 fg = {fg},\n\
+             \x20 truecolor = {truecolor},\n\
+             \x20 text = {text},\n\
              \x20 muted = {muted},\n\
              \x20 rule = {rule},\n\
+             \x20 accent = {accent},\n\
+             \x20 signal = {signal},\n\
              \x20 selection = {selection},\n\
-             \x20 working = {working},\n\
-             \x20 failed = {failed},\n\
              }}\n",
             name = self.name,
-            mark = self.glyphs.mark,
-            accent = lua_hex(Role::Accent),
-            signal = lua_hex(Role::Signal),
-            fg = lua_hex(Role::Text),
-            muted = lua_hex(Role::Muted),
-            rule = lua_hex(Role::Rule),
-            selection = lua_hex(Role::Selection),
-            working = lua_hex(Role::Working),
-            failed = lua_hex(Role::Failed),
+            truecolor = self.text.rgb.is_some() || self.accent.rgb.is_some(),
+            text = attributes(Role::Text, "fg"),
+            muted = attributes(Role::Muted, "fg"),
+            rule = attributes(Role::Rule, "fg"),
+            accent = attributes(Role::Accent, "fg"),
+            signal = attributes(Role::Signal, "fg"),
+            selection = attributes(Role::Selection, "bg"),
         )
     }
 }
 
-fn fzf_value(spec: RoleSpec, depth: ColorDepth) -> Option<String> {
-    match depth {
-        ColorDepth::None => None,
+/// A role's colour as fzf writes one: `#rrggbb`, a palette number, or `-1` for the default.
+fn fzf_value(spec: RoleSpec, depth: ColorDepth) -> String {
+    let palette = || spec.ansi256.or(spec.ansi16.index());
+    let value = match depth {
         ColorDepth::Truecolor => spec
             .hex()
-            .or_else(|| spec.ansi256.map(|index| index.to_string())),
-        ColorDepth::Ansi256 => spec.ansi256.map(|index| index.to_string()).or_else(|| {
-            spec.rgb
-                .map(|(r, g, b)| rgb_to_256_index(r, g, b).to_string())
-        }),
-        ColorDepth::Ansi16 => {
-            if spec.reverse_on_16 || spec.ansi16 == Ansi16::Default {
-                None
-            } else {
-                Some(spec.ansi16.tmux_name().to_owned())
-            }
-        }
-    }
+            .or_else(|| palette().map(|index| index.to_string())),
+        ColorDepth::Ansi256 => spec
+            .ansi256
+            .or_else(|| {
+                spec.rgb
+                    .map(|(red, green, blue)| rgb_to_256_index(red, green, blue))
+            })
+            .or(spec.ansi16.index())
+            .map(|index| index.to_string()),
+        ColorDepth::Ansi16 | ColorDepth::None => spec.ansi16.index().map(|index| index.to_string()),
+    };
+    value.unwrap_or_else(|| "-1".to_owned())
 }
 
 fn parse_color_override(raw: &str, base: RoleSpec) -> Option<RoleSpec> {
@@ -1494,7 +1344,7 @@ pub fn load_from_env() -> Theme {
     let Ok(configuration) =
         tx_core::host::setup::core_config(&tx_core::host::args::Global::default())
     else {
-        return Theme::terminal(depth);
+        return Theme::terminal(Polarity::Unknown, depth);
     };
     let directories = configuration.directories;
     let polarity = std::env::var("TX_THEME_POLARITY").map_or_else(
@@ -1502,59 +1352,85 @@ pub fn load_from_env() -> Theme {
         |value| Polarity::parse(&value),
     );
     Theme::load(&directories.config, polarity, depth)
-        .unwrap_or_else(|_| Theme::automatic(polarity, depth))
+        .unwrap_or_else(|_| Theme::terminal(polarity, depth))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const ROLES: [Role; 12] = [
+        Role::Text,
+        Role::Muted,
+        Role::Rule,
+        Role::RuleActive,
+        Role::Signal,
+        Role::Accent,
+        Role::OnAccent,
+        Role::Working,
+        Role::Info,
+        Role::Failed,
+        Role::Surface,
+        Role::Selection,
+    ];
+
+    fn resolved(settings: &ThemeSettings, config_dir: &Path, polarity: Polarity) -> Theme {
+        Theme::resolve(settings, config_dir, polarity, ColorDepth::Truecolor).unwrap()
+    }
+
     #[test]
     fn no_color_never_sets_fg_or_bg_and_preserves_modifiers() {
         for theme in [
-            Theme::tx_dark(ColorDepth::None),
-            Theme::tx_light(ColorDepth::None),
-            Theme::terminal(ColorDepth::None),
+            Theme::terminal(Polarity::Dark, ColorDepth::None),
+            Theme::terminal(Polarity::Light, ColorDepth::None),
+            Theme::terminal(Polarity::Unknown, ColorDepth::None),
             Theme::tokyo_night(ColorDepth::None),
         ] {
-            for role in [
-                Role::Text,
-                Role::Muted,
-                Role::Rule,
-                Role::RuleActive,
-                Role::Signal,
-                Role::Accent,
-                Role::OnAccent,
-                Role::Working,
-                Role::Info,
-                Role::Failed,
-                Role::Surface,
-                Role::Selection,
-            ] {
+            for role in ROLES {
                 let style = theme.style(role);
                 assert_eq!(style.fg, None, "{}: {role:?}", theme.name);
                 assert_eq!(style.bg, None, "{}: {role:?}", theme.name);
                 assert_eq!(theme.ansi_fg(role), "", "{}: {role:?}", theme.name);
                 assert_eq!(theme.ansi_bg(role), "", "{}: {role:?}", theme.name);
             }
-            assert!(
-                theme
-                    .style(Role::Signal)
-                    .add_modifier
-                    .contains(Modifier::BOLD | Modifier::REVERSED)
+            let signal = theme.style(Role::Signal).add_modifier;
+            assert!(signal.contains(Modifier::BOLD | Modifier::REVERSED));
+            assert_eq!(
+                theme.selection_style(),
+                Style::new().add_modifier(Modifier::REVERSED)
             );
-            assert!(
-                theme
-                    .style(Role::RuleActive)
-                    .add_modifier
-                    .contains(Modifier::BOLD)
-            );
+            assert!(!theme.has_fills());
             assert_eq!(theme.fzf_color_arg(true), "--no-color");
         }
     }
 
-    fn resolved(settings: &ThemeSettings, config_dir: &Path, polarity: Polarity) -> Theme {
-        Theme::resolve(settings, config_dir, polarity, ColorDepth::Truecolor).unwrap()
+    #[test]
+    fn the_terminal_theme_uses_the_terminals_own_colours_and_fills_only_a_known_background() {
+        let dark = Theme::terminal(Polarity::Dark, ColorDepth::Truecolor);
+        assert_eq!(dark.color(Role::Accent), Some(Color::Blue));
+        assert_eq!(dark.color(Role::Signal), Some(Color::Yellow));
+        assert_eq!(dark.color(Role::Working), Some(Color::Green));
+        assert_eq!(dark.selection_style(), Style::new().bg(Color::Indexed(236)));
+        assert!(dark.has_fills());
+
+        // ANSI yellow on a light background is unreadable: reverse video carries the signal.
+        let light = Theme::terminal(Polarity::Light, ColorDepth::Truecolor);
+        assert_eq!(light.color(Role::Signal), None);
+        let signal = light.style(Role::Signal).add_modifier;
+        assert!(signal.contains(Modifier::BOLD | Modifier::REVERSED));
+        assert_eq!(
+            light.selection_style(),
+            Style::new().bg(Color::Indexed(254))
+        );
+
+        let unknown = Theme::terminal(Polarity::Unknown, ColorDepth::Truecolor);
+        assert!(!unknown.has_fills());
+        assert_eq!(
+            unknown.selection_style(),
+            Style::new().add_modifier(Modifier::REVERSED)
+        );
+        // Sixteen colours have no quiet fill either.
+        assert!(!Theme::terminal(Polarity::Dark, ColorDepth::Ansi16).has_fills());
     }
 
     #[test]
@@ -1568,44 +1444,11 @@ mod tests {
     }
 
     #[test]
-    fn auto_falls_back_to_terminal_when_polarity_is_unknown() {
-        let dir = tempfile::tempdir().unwrap();
-        let settings = ThemeSettings::default();
-        assert_eq!(
-            resolved(&settings, dir.path(), Polarity::Dark).name,
-            "tx-dark"
-        );
-        assert_eq!(
-            resolved(&settings, dir.path(), Polarity::Light).name,
-            "tx-light"
-        );
-        assert_eq!(
-            resolved(&settings, dir.path(), Polarity::Unknown).name,
-            "terminal"
-        );
-    }
-
-    #[test]
-    fn light_signal_uses_reverse_on_16_colors_not_yellow() {
-        let light = Theme::tx_light(ColorDepth::Ansi16);
-        let style = light.style(Role::Signal);
-        assert_eq!(style.fg, None);
-        assert!(
-            style
-                .add_modifier
-                .contains(Modifier::REVERSED | Modifier::BOLD)
-        );
-        assert_eq!(light.tmux_fg_style(Role::Signal), "fg=default,bold,reverse");
-    }
-
-    #[test]
-    fn banner_fits_home_backdrop_contract_with_equal_width_rows() {
-        for banner in [BANNER_UNICODE, BANNER_ASCII] {
-            assert!(banner.len() <= 7);
-            let width = banner[0].chars().count();
-            assert!(width <= 48);
-            assert!(banner.iter().all(|row| row.chars().count() == width));
-        }
+    fn the_logo_is_a_rectangle_of_whole_cells() {
+        assert_eq!(LOGO_PIXELS.len() % 2, 0);
+        let width = LOGO_PIXELS[0].len();
+        assert!(LOGO_PIXELS.iter().all(|row| row.len() == width));
+        assert!(LOGO_PIXELS.len() / 2 <= 7 && width <= 48);
     }
 
     #[test]
@@ -1614,7 +1457,7 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("themes")).unwrap();
         std::fs::write(
             dir.path().join("themes/mine.yaml"),
-            "base: tx-dark\ncolors:\n  working: green\ndark:\n  accent: \"#ff75b5\"\nlight:\n  accent: \"#a01060\"\n",
+            "base: tokyo-night\ncolors:\n  working: green\ndark:\n  accent: \"#ff75b5\"\nlight:\n  accent: \"#a01060\"\n",
         )
         .unwrap();
         let mut settings = ThemeSettings {
@@ -1667,18 +1510,34 @@ mod tests {
     }
 
     #[test]
-    fn tmux_conf_keeps_slots_and_respects_rule_and_bar_modes() {
-        let rule_conf = Theme::tx_dark(ColorDepth::Truecolor).tmux_conf();
-        assert!(rule_conf.contains("set -g @tx-mark \"╋╳\""));
-        assert!(rule_conf.contains("set -g status-format[0]"));
-        assert!(rule_conf.contains("#{T:status-left}"));
-        assert!(rule_conf.contains("#{T:status-right}"));
-        assert!(rule_conf.contains("set -g popup-border-lines heavy"));
-        assert!(rule_conf.contains("set -g set-titles-string \"#{@tx-mark} #S\""));
+    fn tmux_takes_bars_with_fills_and_lines_without() {
+        let bars = Theme::terminal(Polarity::Dark, ColorDepth::Truecolor).tmux_conf();
+        assert!(bars.contains("set -g @tx-mark \"tx\""), "{bars}");
+        assert!(
+            bars.contains("set -g @tx-chip-style \"fg=black,bg=blue,bold\""),
+            "{bars}"
+        );
+        assert!(
+            bars.contains("set -g status-style \"fg=default,bg=colour0\""),
+            "{bars}"
+        );
+        assert!(bars.contains("set -g pane-border-lines spaces"), "{bars}");
+        assert!(
+            bars.contains("set -g pane-active-border-style \"bg=colour236\""),
+            "{bars}"
+        );
+        assert!(bars.contains("set -g popup-border-lines rounded"), "{bars}");
+        assert!(bars.contains("set -gu status-format"), "{bars}");
 
-        let mut bar_theme = Theme::tx_dark(ColorDepth::Truecolor);
-        bar_theme.status_style = StatusStyle::Bar;
-        let bar_conf = bar_theme.tmux_conf();
-        assert!(bar_conf.contains("set -gu status-format"));
+        let lines = Theme::terminal(Polarity::Unknown, ColorDepth::Truecolor).tmux_conf();
+        assert!(lines.contains("set -g pane-border-lines single"), "{lines}");
+        assert!(
+            lines.contains("set -g status-style \"fg=default,bg=default\""),
+            "{lines}"
+        );
+        assert!(
+            lines.contains("set -g @tx-chip-style \"fg=default,bold,reverse\""),
+            "{lines}"
+        );
     }
 }

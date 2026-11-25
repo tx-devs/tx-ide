@@ -1,5 +1,5 @@
 <p>
-  <img src="docs-site/assets/tx-mark.svg" alt="tx" width="56" height="32">
+  <img src="docs-site/assets/tx-mark.svg" alt="tx" width="80" height="44">
 </p>
 
 # tx-ide
@@ -241,27 +241,23 @@ selected later has no entry, which means on.
 
 ### Theme
 
-`theme:` in `config.yaml` sets the colours of everything tx draws: the tmux frame, its own
-screens, the fzf pickers and the nvim forms.
+tx has no palette of its own: by default every colour it draws is the terminal's own foreground
+or one of its sixteen colours, so it wears your terminal's theme. `theme:` in `config.yaml`
+changes that for the tmux frame, tx's own screens, the fzf pickers and the nvim forms at once.
 
 ```yaml
 theme:
-  name: auto            # auto | tx-dark | tx-light | terminal | tokyo-night | a file in themes/
-  status_style: rule    # rule: the bottom edge of the frame | bar: a filled tmux bar
+  name: terminal        # terminal | tokyo-night | a file in themes/
   glyphs: unicode       # unicode | ascii
   colors:               # optional: roles to replace in the named theme
-    accent: "#ff75b5"   # #rrggbb, or one of the terminal's sixteen colours by name
+    accent: magenta     # one of the terminal's sixteen by name, or #rrggbb
 ```
 
-`auto` is `tx-dark` on a dark terminal, `tx-light` on a light one, and `terminal` (the terminal's
-own colours only) when the terminal has not said which it is. The frame round an agent has no
-colour of its own: the one colour that appears on it, `signal`, means an agent needs you. A theme
-of your own is `~/.config/tx-ide/themes/<name>.yaml`: a shipped theme as `base`, with `colors`,
-and `dark` or `light` for one background only.
-
-`tx update` applies a change, to a running server at once, and reports a role or a colour it does
-not know instead of skipping it. `NO_COLOR` removes every colour and keeps bold, dim and reverse.
-The roles, the theme file and how the theme reaches each surface are in the guide's
+A theme of your own is `~/.config/tx-ide/themes/<name>.yaml`: a shipped theme as `base`, with
+`colors`, and `dark` or `light` for one background only. `tx update` applies a change, to a
+running server at once, and reports a role or a colour it does not know instead of skipping it.
+`NO_COLOR` removes every colour and keeps bold, dim and reverse. The roles, the theme file and
+how the theme reaches each surface are in the guide's
 [theme page](docs-site/guide/src/theme.md).
 
 ## Where files live

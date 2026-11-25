@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # keys: C-h C-j C-k C-l
-# unset: @tx-attach-to-session @tx-pulse
+# unset: @tx-attach-to-session
 # unhook: client-dark-theme client-light-theme
 # tx key plugin `ide`: the IDE's root-table keys and global look. Run by `run-shell` from the
 # server's tmux.conf, which `tx update` writes (first, before the other plugins' fragments).

@@ -29,7 +29,6 @@ impl Plugin for IdePlugin {
         r.verb(Arc::new(install::ThemeApplyVerb));
         r.verb(Arc::new(show_verb::ShowVerb));
         r.verb(Arc::new(show_verb::AttachIntoVerb));
-        r.sink(Box::new(install::MessagePulseSink::new(r.config().clone())));
         Ok(())
     }
 }

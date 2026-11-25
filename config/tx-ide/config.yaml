@@ -19,8 +19,7 @@ worktree:
   # A Node project would add node_modules and dist.
   build_outputs: [target]
 
-# Visual identity and colour theme (`tx update` reapplies tmux options).
+# The colours of everything tx draws (`tx update` applies a change).
 theme:
-  name: auto                   # auto | tx-dark | tx-light | terminal | tokyo-night | <themes/name>
-  status_style: rule           # rule | bar
+  name: terminal               # terminal: the terminal's own colours | tokyo-night | <themes/name>
   glyphs: unicode              # unicode | ascii
