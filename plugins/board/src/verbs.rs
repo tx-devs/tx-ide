@@ -429,6 +429,7 @@ impl Verb for BoardOpen {
             }
         };
         let command = tx_command(core, &[ATTACH_VERB, pane, client, path]);
+        let title = tx_client::theme::popup_title(&format!("board {}", place.repository.slug()));
         ui.run(&[
             "display-popup",
             "-c",
@@ -443,7 +444,7 @@ impl Verb for BoardOpen {
             "-y",
             "1",
             "-T",
-            &format!(" board {} ", place.repository.slug()),
+            &title,
             &command,
         ])
         .map_err(failed)?;

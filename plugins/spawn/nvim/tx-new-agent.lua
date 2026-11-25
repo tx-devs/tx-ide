@@ -28,29 +28,32 @@
 
 local M = {}
 
--- tx's palette (crates/tx/src/palette.rs, tmux/tx-ide.tmux)
-local ACCENT = "#7aa2f7"
-local FG = "#c0caf5"
-local DIM = "#a9b1d6"
-local WARN = "#e0af68"
-local BORDER = "#3b4261"
-local SELECTION = "#303030"
+-- The theme `tx update` generated, `<data>/conf/theme.lua`: each role as highlight attributes
+-- (24-bit, or the terminal's palette), nil for the terminal's default.
+local function load_theme()
+  local data_dir = vim.env.TX_DATA_DIR or vim.fn.expand("~/.local/share/tx-ide")
+  return dofile(data_dir .. "/conf/theme.lua")
+end
 
 local HELP = " h/l j/k move · 1-8 jump · i type · j/k pick · ←/→ project · Enter spawn · Esc cancel"
 
 local function highlights()
-  local set = vim.api.nvim_set_hl
-  set(0, "Normal", { fg = FG })
-  set(0, "NormalFloat", { fg = FG })
-  set(0, "TxFormBorder", { fg = BORDER })
-  set(0, "TxFormBorderActive", { fg = ACCENT })
-  set(0, "TxFormTitle", { fg = DIM })
-  set(0, "TxFormTitleActive", { fg = ACCENT, bold = true })
-  set(0, "TxFormPicked", { fg = ACCENT, bold = true })
-  set(0, "TxFormHint", { fg = DIM, italic = true })
-  set(0, "TxFormHelp", { fg = DIM })
-  set(0, "TxFormWarning", { fg = WARN })
-  set(0, "CursorLine", { bg = SELECTION })
+  local theme = load_theme()
+  vim.o.termguicolors = theme.truecolor
+  local function set(group, role, extra)
+    vim.api.nvim_set_hl(0, group, vim.tbl_extend("force", role or {}, extra or {}))
+  end
+  set("Normal", theme.text)
+  set("NormalFloat", theme.text)
+  set("TxFormBorder", theme.rule)
+  set("TxFormBorderActive", theme.accent)
+  set("TxFormTitle", theme.muted)
+  set("TxFormTitleActive", theme.accent, { bold = true })
+  set("TxFormPicked", theme.accent, { bold = true })
+  set("TxFormHint", theme.muted, { italic = true })
+  set("TxFormHelp", theme.muted)
+  set("TxFormWarning", theme.signal, { bold = true })
+  set("CursorLine", theme.selection or { reverse = true })
 end
 
 function M.open()
@@ -58,7 +61,6 @@ function M.open()
   local spec = vim.json.decode(file:read("*a"))
   file:close()
 
-  vim.o.termguicolors = true
   vim.o.laststatus = 0
   vim.o.ruler = false
   vim.o.mouse = "a"

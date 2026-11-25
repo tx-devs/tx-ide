@@ -1,4 +1,4 @@
- tx-board tx-devs/tx-ide   refreshed 12s ago
+ tx board  tx-devs/tx-ide   refreshed 12s ago
 ┌ Backlog 2 ──────────────────────────┐┌ In progress 2 ─────────────────────┐┌ Done 1 ─────────────────────────────┐
 │ #115 Add shortcut + p to enable/dis…││ #116 Tx-board                      ││ #112 Timeline: Enter nests the lane…│
 │   feature plugins                   ││   feature plugins ● issue-116      ││   feature @sok                      │

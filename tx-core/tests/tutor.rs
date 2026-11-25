@@ -427,7 +427,7 @@ fn navigation_status_and_hint() {
     );
     let status = tutor.ok(&["tutor", "status"], "");
     assert_eq!(status.lines().count(), 13, "{status}");
-    assert!(status.contains("▶  4. 04-first-route\n"), "{status}");
+    assert!(status.contains("▸  4. 04-first-route\n"), "{status}");
     let hint = tutor.ok(&["tutor", "hint"], "");
     let solution = std::fs::read_to_string(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))

@@ -1,3 +1,7 @@
+<p>
+  <img src="docs-site/assets/tx-mark.svg" alt="tx" width="80" height="44">
+</p>
+
 # tx-ide
 
 tx-ide is an IDE in tmux for a swarm of interactive coding agents. Each agent is an engine's own
@@ -235,6 +239,27 @@ selected later has no entry, which means on.
 `model` applies only to `agent.engine`: with `--engine codex`, Codex runs its own default.
 `engine-claude` also takes `claude_settings`, Claude settings merged into every launch.
 
+### Theme
+
+tx has no palette of its own: by default every colour it draws is the terminal's own foreground
+or one of its sixteen colours, so it wears your terminal's theme. `theme:` in `config.yaml`
+changes that for the tmux frame, tx's own screens, the fzf pickers and the nvim forms at once.
+
+```yaml
+theme:
+  name: terminal        # terminal | tokyo-night | a file in themes/
+  glyphs: unicode       # unicode | ascii
+  colors:               # optional: roles to replace in the named theme
+    accent: magenta     # one of the terminal's sixteen by name, or #rrggbb
+```
+
+A theme of your own is `~/.config/tx-ide/themes/<name>.yaml`: a shipped theme as `base`, with
+`colors`, and `dark` or `light` for one background only. `tx update` applies a change, to a
+running server at once, and reports a role or a colour it does not know instead of skipping it.
+`NO_COLOR` removes every colour and keeps bold, dim and reverse. The roles, the theme file and
+how the theme reaches each surface are in the guide's
+[theme page](docs-site/guide/src/theme.md).
+
 ## Where files live
 
 Five directories, XDG style (on macOS too), named after the application: `tx-ide`, or
@@ -243,7 +268,7 @@ Five directories, XDG style (on macOS too), named after the application: `tx-ide
 
 | directory | default | holds |
 |---|---|---|
-| config | `~/.config/tx-ide` | `config.yaml`; your `roles/`, `harness/` and `layouts/` |
+| config | `~/.config/tx-ide` | `config.yaml`; your `roles/`, `harness/`, `layouts/` and `themes/` |
 | data | `~/.local/share/tx-ide` | the agent records with their conversation archives, `log.jsonl`, the agents' `worktrees/`, plugin data, the shipped roles and harness, the IDE's tmux config |
 | state | `~/.local/state/tx-ide` | locks, each agent's assembled prompt |
 | cache | `~/.cache/tx-ide` | Claude's built-in tool list, per Claude version |

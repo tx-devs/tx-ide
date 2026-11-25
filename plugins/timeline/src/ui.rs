@@ -8,7 +8,8 @@
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
+use tx_client::theme::{Role, active};
 
 use super::app::{App, Geometry, RowItem};
 use super::clock;
@@ -16,12 +17,6 @@ use super::clock;
 const AXIS_ROWS: u16 = 3;
 const FOOTER_ROWS: u16 = 2;
 const MAX_LABEL_WIDTH: u16 = 28;
-
-const AMBER: Color = Color::Rgb(224, 175, 104);
-const CURSOR_BG: Color = Color::Indexed(236);
-const IDLE: Color = Color::DarkGray;
-const NOW: Color = Color::Red;
-const MESSAGE: Color = Color::Green;
 
 fn put(buffer: &mut Buffer, x: u16, y: u16, symbol: &str, style: Style) {
     if let Some(cell) = buffer.cell_mut((x, y)) {
@@ -96,7 +91,9 @@ fn draw_axis(app: &App, buffer: &mut Buffer) {
         return;
     }
     let (day_row, tick_row, rule_row) = (axis.y, axis.y + 1, axis.y + 2);
-    let header = Style::new().fg(Color::DarkGray);
+    let theme = active();
+    let header = theme.style(Role::Rule);
+    let tick_style = theme.style(Role::Muted);
     for x in canvas.x..canvas.x + canvas.width {
         put(buffer, x, rule_row, "─", header);
     }
@@ -113,13 +110,7 @@ fn draw_axis(app: &App, buffer: &mut Buffer) {
             let label = age_label(steps_back * step);
             let width = label.len() as u16;
             if i64::from(x) > last_label_end && x + width <= canvas.x + canvas.width {
-                buffer.set_stringn(
-                    x,
-                    tick_row,
-                    &label,
-                    usize::from(width),
-                    Style::new().fg(Color::Gray),
-                );
+                buffer.set_stringn(x, tick_row, &label, usize::from(width), tick_style);
                 last_label_end = i64::from(x + width);
             }
         }
@@ -147,9 +138,10 @@ fn draw_now_column(app: &App, buffer: &mut Buffer, top: u16, bottom: u16, label:
     if !app.on_canvas(column) {
         return;
     }
+    let now_style = active().style(Role::Failed);
     let x = app.geometry.canvas.x + column as u16;
     for y in top..bottom {
-        put(buffer, x, y, "┃", Style::new().fg(NOW));
+        put(buffer, x, y, "┃", now_style);
     }
     if label {
         // "now HH:MM", right-aligned against the now column
@@ -161,7 +153,7 @@ fn draw_now_column(app: &App, buffer: &mut Buffer, top: u16, bottom: u16, label:
             top,
             &text,
             usize::from(width),
-            Style::new().fg(NOW).add_modifier(Modifier::BOLD),
+            now_style.add_modifier(Modifier::BOLD),
         );
     }
 }
@@ -194,17 +186,12 @@ fn draw_rows(app: &App, buffer: &mut Buffer) {
         .collect();
 
     // grid: day boundaries
+    let grid_style = active().style(Role::Rule);
     for (y, _) in &visible {
         for day in &app.payload.days {
             let column = app.column_of(day.offset);
             if app.on_canvas(column) {
-                put(
-                    buffer,
-                    canvas.x + column as u16,
-                    *y,
-                    "┊",
-                    Style::new().fg(Color::Indexed(238)),
-                );
+                put(buffer, canvas.x + column as u16, *y, "┊", grid_style);
             }
         }
     }
@@ -229,11 +216,16 @@ fn draw_rows(app: &App, buffer: &mut Buffer) {
     draw_message_arrows(app, buffer, &lane_row);
 }
 
+fn tag_style(tag: &str) -> Style {
+    match active().tag_color(tag) {
+        Some(color) => Style::new().fg(color),
+        None => Style::new(),
+    }
+}
+
 fn draw_group_header(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
     let group = &app.payload.groups[index];
-    let style = Style::new()
-        .fg(Color::Indexed(group.cube))
-        .add_modifier(Modifier::BOLD);
+    let style = tag_style(&group.key).add_modifier(Modifier::BOLD);
     let count = app
         .visible_lanes()
         .into_iter()
@@ -250,9 +242,11 @@ fn draw_group_header(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
 }
 
 fn draw_lane(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
+    let theme = active();
+    let glyphs = theme.glyphs;
     let lane = &app.payload.lanes[index];
     let canvas = app.geometry.canvas;
-    let group_color = Color::Indexed(app.payload.group_cube(&lane.group));
+    let group_style = tag_style(&lane.group);
     let selected = app.cursor == Some(index);
     let muted = !app.lane_matches(lane) || app.lane_dim(lane);
     let dim = if muted {
@@ -260,34 +254,31 @@ fn draw_lane(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
     } else {
         Modifier::empty()
     };
-    if selected {
-        for x in app.geometry.lanes.x..app.geometry.lanes.x + app.geometry.lanes.width {
-            if let Some(cell) = buffer.cell_mut((x, y)) {
-                cell.set_bg(CURSOR_BG);
-            }
-        }
-    }
 
     // State marker replaces the group stripe; group headings and bars carry the group color.
     let label_width = usize::from(app.geometry.label_width);
-    let indicator = match (lane.live, lane.state.as_str()) {
+    let (indicator, indicator_style) = if !lane.live || lane.state == "ended" {
         // An agent that reported its end reads as gone before refresh marks the process.
-        (false, _) | (true, "ended") => "×",
-        (true, "working") => "●",
-        (true, "starting" | "idle") => "○",
-        (true, _) => "·",
+        (glyphs.ended, theme.style(Role::Muted))
+    } else if lane.waiting {
+        (glyphs.needs_you, theme.style(Role::Signal))
+    } else {
+        match lane.state.as_str() {
+            "working" => (glyphs.working, theme.style(Role::Working)),
+            "starting" => (glyphs.starting, theme.style(Role::Muted)),
+            "idle" => (glyphs.idle, theme.style(Role::Muted)),
+            _ => ("·", theme.style(Role::Muted)),
+        }
     };
     put(
         buffer,
         app.geometry.lanes.x,
         y,
         indicator,
-        Style::new()
-            .fg(Color::Gray)
-            .add_modifier(Modifier::BOLD | dim),
+        indicator_style.add_modifier(Modifier::BOLD | dim),
     );
-    let name_style = Style::new()
-        .fg(if lane.live { Color::White } else { Color::Gray })
+    let name_style = theme
+        .style(if lane.live { Role::Text } else { Role::Muted })
         .add_modifier(if lane.live {
             Modifier::BOLD
         } else {
@@ -305,14 +296,14 @@ fn draw_lane(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
             y,
             engine,
             label_width - after_name - 1,
-            Style::new().fg(Color::DarkGray).add_modifier(dim),
+            theme.style(Role::Muted).add_modifier(dim),
         );
     }
 
     // working bars, idle dashes from the first segment to the kill / now
     let segments = app.segments(lane);
-    let idle_style = Style::new().fg(IDLE).add_modifier(dim);
-    let bar_style = Style::new().fg(group_color).add_modifier(dim);
+    let idle_style = theme.style(Role::Muted).add_modifier(dim);
+    let bar_style = group_style.add_modifier(dim);
     let tail = lane.kill.unwrap_or(app.now);
     let first = segments.first().map_or(lane.a, |segment| segment.0);
     for (x, minute) in canvas_columns(app) {
@@ -337,10 +328,8 @@ fn draw_lane(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
                 buffer,
                 canvas.x + column as u16,
                 y,
-                "×",
-                Style::new()
-                    .fg(group_color)
-                    .add_modifier(Modifier::BOLD | dim),
+                glyphs.ended,
+                group_style.add_modifier(Modifier::BOLD | dim),
             );
         }
     }
@@ -352,8 +341,20 @@ fn draw_lane(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
             canvas.x + now_column as u16 + 1,
             y,
             "▸",
-            Style::new().fg(group_color).add_modifier(Modifier::BOLD),
+            group_style.add_modifier(Modifier::BOLD),
         );
+    }
+    if selected {
+        let highlight = theme.selection_style();
+        for x in app.geometry.lanes.x..app.geometry.lanes.x + app.geometry.lanes.width {
+            if let Some(cell) = buffer.cell_mut((x, y)) {
+                if let Some(bg) = highlight.bg {
+                    cell.set_bg(bg);
+                } else {
+                    cell.set_style(Style::new().add_modifier(highlight.add_modifier));
+                }
+            }
+        }
     }
 }
 
@@ -362,6 +363,7 @@ fn draw_lane(app: &App, buffer: &mut Buffer, y: u16, index: usize) {
 /// small glyphs, plain weight, so the arrows sit under the bars rather than over them. The
 /// selected message is amber and bold; a bar the line crosses keeps its heavy horizontal (`┿`).
 fn draw_message_arrows(app: &App, buffer: &mut Buffer, lane_row: &[Option<u16>]) {
+    let theme = active();
     let canvas = app.geometry.canvas;
     let mut ordered = app.messages();
     // the selected message draws last so nothing covers it
@@ -377,11 +379,10 @@ fn draw_message_arrows(app: &App, buffer: &mut Buffer, lane_row: &[Option<u16>])
         }
         let x = canvas.x + column as u16;
         let selected = app.message == Some(index);
-        let color = if selected { AMBER } else { MESSAGE };
         let style = if selected {
-            Style::new().fg(color).add_modifier(Modifier::BOLD)
+            theme.style(Role::Signal).add_modifier(Modifier::BOLD)
         } else {
-            Style::new().fg(color)
+            theme.style(Role::Working)
         };
         match edge.from.and_then(|from| lane_row[from]) {
             Some(from_row) if from_row != to_row => {
@@ -404,12 +405,13 @@ fn draw_footer(app: &App, buffer: &mut Buffer, rect: Rect) {
     if rect.height == 0 {
         return;
     }
+    let theme = active();
     let status_style = if app.notice.is_some() {
-        Style::new().fg(Color::Red)
+        theme.style(Role::Failed)
     } else if app.message.is_some() {
-        Style::new().fg(AMBER)
+        theme.style(Role::Signal)
     } else {
-        Style::new().fg(Color::White)
+        theme.style(Role::Text)
     };
     buffer.set_stringn(
         rect.x,
@@ -420,9 +422,9 @@ fn draw_footer(app: &App, buffer: &mut Buffer, rect: Rect) {
     );
     if rect.height > 1 {
         let hint_style = if app.searching {
-            Style::new().fg(AMBER)
+            theme.style(Role::Signal)
         } else {
-            Style::new().fg(Color::DarkGray)
+            theme.style(Role::Muted)
         };
         buffer.set_stringn(
             rect.x,

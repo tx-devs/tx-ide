@@ -9,7 +9,8 @@ use std::cell::RefCell;
 use std::io;
 
 use ratatui::crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
+    MouseEventKind,
 };
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -17,12 +18,14 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Paragraph};
 use ratatui::{DefaultTerminal, Frame};
 use tx_client::palette::{
-    ACCENT, BACKGROUND, COMMENT, DIM_FG, FG, ON_ACCENT, SUBTLE_FG, SURFACE, SURFACE_RAISED, SURFACE_SUNKEN, WARN,
-    palette,
+    ACCENT, BACKGROUND, COMMENT, DIM_FG, FG, ON_ACCENT, SUBTLE_FG, SURFACE, SURFACE_RAISED,
+    SURFACE_SUNKEN, WARN, palette,
 };
 
 use crate::bindings::{Bindings, Owner};
-use crate::keyboard::{self, Cap, Mode, Platform, WIDTH_IN_QUARTERS, in_mode, keystroke, tmux_key_name};
+use crate::keyboard::{
+    self, Cap, Mode, Platform, WIDTH_IN_QUARTERS, in_mode, keystroke, tmux_key_name,
+};
 
 /// What a click lands on.
 #[derive(Clone)]
@@ -75,7 +78,10 @@ fn event_loop(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<()> {
                 }
             },
             Event::Mouse(mouse) if mouse.kind == MouseEventKind::Down(MouseButton::Left) => {
-                let position = Position { x: mouse.column, y: mouse.row };
+                let position = Position {
+                    x: mouse.column,
+                    y: mouse.row,
+                };
                 let target = app
                     .targets
                     .borrow()
@@ -121,34 +127,63 @@ fn style(foreground: Color) -> Style {
 }
 
 fn pill(foreground: Color, background: Color) -> Style {
-    Style::new().fg(palette(foreground)).bg(palette(background)).add_modifier(Modifier::BOLD)
+    Style::new()
+        .fg(palette(foreground))
+        .bg(palette(background))
+        .add_modifier(Modifier::BOLD)
 }
 
 const CAPTION_HEIGHT: u16 = 2;
 
 fn draw(frame: &mut Frame, app: &App) {
     let area = frame.area();
-    frame.render_widget(Block::new().style(Style::new().bg(palette(BACKGROUND))), area);
+    frame.render_widget(
+        Block::new().style(Style::new().bg(palette(BACKGROUND))),
+        area,
+    );
     let units = f32::from(WIDTH_IN_QUARTERS) / 4.0;
-    let columns_per_unit = (f32::from(area.width.saturating_sub(4)) / units).floor().clamp(3.0, 7.0);
+    let columns_per_unit = (f32::from(area.width.saturating_sub(4)) / units)
+        .floor()
+        .clamp(3.0, 7.0);
     let column = |quarters: u16| (f32::from(quarters) * columns_per_unit / 4.0).round() as u16;
     let board_width = column(WIDTH_IN_QUARTERS);
     let board_height = 5 * 3;
     let content_height = 4 + board_height + 1 + 2 + CAPTION_HEIGHT;
     let top = area.y + area.height.saturating_sub(content_height) / 2;
     let left = area.x + area.width.saturating_sub(board_width) / 2;
-    let row = |y: u16, height: u16| Rect { x: left, y, width: board_width, height }.intersection(area);
+    let row = |y: u16, height: u16| {
+        Rect {
+            x: left,
+            y,
+            width: board_width,
+            height,
+        }
+        .intersection(area)
+    };
 
     draw_switches(frame, app, row(top, 1), row(top + 2, 1));
     let board_top = top + 4;
     for cap in &app.caps {
         let x = left + column(cap.start);
         let width = column(cap.start + cap.width) - column(cap.start) - 1;
-        draw_cap(frame, app, cap, Rect { x, y: board_top + cap.row * 3, width, height: 3 });
+        draw_cap(
+            frame,
+            app,
+            cap,
+            Rect {
+                x,
+                y: board_top + cap.row * 3,
+                width,
+                height: 3,
+            },
+        );
     }
     let legend_y = board_top + board_height + 1;
     frame.render_widget(legend(app), row(legend_y, 1));
-    frame.render_widget(Paragraph::new(caption(app)), row(legend_y + 2, CAPTION_HEIGHT));
+    frame.render_widget(
+        Paragraph::new(caption(app)),
+        row(legend_y + 2, CAPTION_HEIGHT),
+    );
 }
 
 /// The keyboard row (Shift-Tab) above the mode row (Tab), each with its key at the right.
@@ -158,8 +193,20 @@ fn draw_switches(frame: &mut Frame, app: &App, platform_row: Rect, mode_row: Rec
     for platform in [Platform::Mac, Platform::Windows] {
         let label = format!(" {} ", platform.name());
         let width = label.chars().count() as u16;
-        let label_style = if platform == app.platform { pill(FG, SURFACE_RAISED) } else { style(SUBTLE_FG) };
-        app.targets.borrow_mut().push((Rect { x, y: platform_row.y, width, height: 1 }, Target::Platform(platform)));
+        let label_style = if platform == app.platform {
+            pill(FG, SURFACE_RAISED)
+        } else {
+            style(SUBTLE_FG)
+        };
+        app.targets.borrow_mut().push((
+            Rect {
+                x,
+                y: platform_row.y,
+                width,
+                height: 1,
+            },
+            Target::Platform(platform),
+        ));
         x += width + 2;
         platforms.push(Span::styled(label, label_style));
         platforms.push(Span::raw("  "));
@@ -168,14 +215,22 @@ fn draw_switches(frame: &mut Frame, app: &App, platform_row: Rect, mode_row: Rec
 
     let mut modes = Vec::new();
     for mode in Mode::ALL {
-        let count = app.bindings.keys.keys().filter(|key| Mode::of(key, &app.caps) == mode).count();
+        let count = app
+            .bindings
+            .keys
+            .keys()
+            .filter(|key| Mode::of(key, &app.caps) == mode)
+            .count();
         let (label_style, count_style) = if mode == app.mode {
             let active = pill(FG, SURFACE_RAISED).add_modifier(Modifier::UNDERLINED);
             (active, active)
         } else {
             (style(SUBTLE_FG), style(COMMENT))
         };
-        modes.push(Span::styled(format!(" {} ", mode.name(app.platform)), label_style));
+        modes.push(Span::styled(
+            format!(" {} ", mode.name(app.platform)),
+            label_style,
+        ));
         modes.push(Span::styled(format!("{count} "), count_style));
         modes.push(Span::raw(" "));
     }
@@ -183,11 +238,22 @@ fn draw_switches(frame: &mut Frame, app: &App, platform_row: Rect, mode_row: Rec
 
     let mac = app.platform == Platform::Mac;
     for (row, hint) in [
-        (platform_row, if mac { " ⇧ shift ⇥ tab " } else { " Shift+Tab " }),
+        (
+            platform_row,
+            if mac {
+                " ⇧ shift ⇥ tab "
+            } else {
+                " Shift+Tab "
+            },
+        ),
         (mode_row, if mac { " ⇥ tab " } else { " Tab " }),
     ] {
         let width = hint.chars().count() as u16;
-        let area = Rect { x: row.right().saturating_sub(width), width, ..row };
+        let area = Rect {
+            x: row.right().saturating_sub(width),
+            width,
+            ..row
+        };
         frame.render_widget(Span::styled(hint, pill(FG, SURFACE_RAISED)), area);
     }
 }
@@ -200,7 +266,9 @@ fn draw_cap(frame: &mut Frame, app: &App, cap: &Cap, area: Rect) {
         None => (SURFACE_SUNKEN, COMMENT),
     };
     if let Some((name, _)) = &key {
-        app.targets.borrow_mut().push((area, Target::Key(name.clone())));
+        app.targets
+            .borrow_mut()
+            .push((area, Target::Key(name.clone())));
     }
     if area.bottom() > screen.bottom() {
         return;
@@ -208,26 +276,46 @@ fn draw_cap(frame: &mut Frame, app: &App, cap: &Cap, area: Rect) {
     let buffer = frame.buffer_mut();
     for x in area.left()..area.right().min(screen.right()) {
         buffer[(x, area.y)].set_symbol("▄").set_fg(palette(fill));
-        buffer[(x, area.y + 1)].set_symbol(" ").set_bg(palette(fill));
-        buffer[(x, area.y + 2)].set_symbol("▀").set_fg(palette(fill));
+        buffer[(x, area.y + 1)]
+            .set_symbol(" ")
+            .set_bg(palette(fill));
+        buffer[(x, area.y + 2)]
+            .set_symbol("▀")
+            .set_fg(palette(fill));
     }
     let symbol = key.as_ref().map_or(cap.symbol, |(_, symbol)| symbol);
     let symbol_x = area.x + area.width.saturating_sub(symbol.chars().count() as u16) / 2;
-    let weight = if matches!(fill, SURFACE | SURFACE_SUNKEN) { Modifier::empty() } else { Modifier::BOLD };
-    let symbol_style = Style::new().fg(palette(symbol_color)).bg(palette(fill)).add_modifier(weight);
+    let weight = if matches!(fill, SURFACE | SURFACE_SUNKEN) {
+        Modifier::empty()
+    } else {
+        Modifier::BOLD
+    };
+    let symbol_style = Style::new()
+        .fg(palette(symbol_color))
+        .bg(palette(fill))
+        .add_modifier(weight);
     buffer.set_string(symbol_x, area.y + 1, symbol, symbol_style);
     // In the base mode a dot at the right says the shifted key is bound too.
     if app.mode != Mode::Base || area.width < 3 {
         return;
     }
-    let Some((shifted, _)) = cap.key(Mode::Shift) else { return };
-    let Some(binding) = app.bindings.keys.get(&shifted) else { return };
+    let Some((shifted, _)) = cap.key(Mode::Shift) else {
+        return;
+    };
+    let Some(binding) = app.bindings.keys.get(&shifted) else {
+        return;
+    };
     let dot = match (&binding.owner, fill) {
         (_, ACCENT | WARN) => BACKGROUND,
         (Owner::Tx(_), _) => ACCENT,
         (Owner::Tmux, _) => DIM_FG,
     };
-    buffer.set_string(area.right() - 1, area.y + 1, "•", Style::new().fg(palette(dot)).bg(palette(fill)));
+    buffer.set_string(
+        area.right() - 1,
+        area.y + 1,
+        "•",
+        Style::new().fg(palette(dot)).bg(palette(fill)),
+    );
 }
 
 fn legend(app: &App) -> Line<'static> {
@@ -240,17 +328,27 @@ fn legend(app: &App) -> Line<'static> {
         Span::styled("free", style(DIM_FG)),
     ];
     if app.mode == Mode::Base {
-        let shift = if app.platform == Platform::Mac { "⇧" } else { "Shift+" };
+        let shift = if app.platform == Platform::Mac {
+            "⇧"
+        } else {
+            "Shift+"
+        };
         spans.push(Span::styled("      •", style(ACCENT)));
         spans.push(Span::styled("•", style(DIM_FG)));
-        spans.push(Span::styled(format!(" {shift}key is also bound"), style(DIM_FG)));
+        spans.push(Span::styled(
+            format!(" {shift}key is also bound"),
+            style(DIM_FG),
+        ));
     }
     Line::from(spans)
 }
 
 fn caption(app: &App) -> Vec<Line<'static>> {
     let Some(key) = &app.selected else {
-        return vec![Line::styled("press a key to see what it does  ·  esc closes", style(COMMENT))];
+        return vec![Line::styled(
+            "press a key to see what it does  ·  esc closes",
+            style(COMMENT),
+        )];
     };
     let keycap = pill(FG, SURFACE_RAISED);
     let mut spans = vec![

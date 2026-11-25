@@ -22,7 +22,9 @@ const WATER_DEEP: (f32, f32, f32) = (14.0, 16.0, 38.0);
 const WATER_LIGHT: (f32, f32, f32) = (30.0, 40.0, 82.0);
 /// Shades per step from `WATER_DEEP` to `WATER_LIGHT`.
 const WATER_SHADES: f32 = 3.0;
-const LOGO_WHITE: Color = Color::Rgb(255, 244, 226);
+const LOGO_TOP: Color = Color::Rgb(255, 244, 226);
+/// The cream of the top fading into the water's own blue.
+const LOGO_BOTTOM: Color = Color::Rgb(150, 178, 240);
 /// The brightest water: text cells show the water as it is, and fish under them no brighter.
 const TEXT_CEILING: Color = Color::Rgb(30, 40, 82);
 /// How close a head must come to a pellet to eat it.
@@ -194,7 +196,7 @@ impl Backdrop for Pond {
         for pellet in &self.pellets {
             pellet.draw(self.clock, area, text, buffer);
         }
-        draw_logo(logo, LOGO_WHITE, LOGO_WHITE, buffer);
+        draw_logo(logo, LOGO_TOP, LOGO_BOTTOM, buffer);
     }
 
     fn mouse(&mut self, event: MouseEvent) {

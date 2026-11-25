@@ -39,7 +39,82 @@ pub struct Config {
     #[serde(default)]
     pub worktree: WorktreeSettings,
     #[serde(default)]
+    pub theme: ThemeSettings,
+    #[serde(default)]
     pub plugins: BTreeMap<String, Entry>,
+}
+
+/// Which glyph tier tx draws its mark, states and motion with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GlyphTier {
+    #[default]
+    Unicode,
+    Ascii,
+}
+
+/// The `theme:` section of `config.yaml`: either a theme name (`theme: tokyo-night`) or a
+/// mapping with `name`, `glyphs` and per-role colour overrides.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThemeSettings {
+    /// A shipped theme (`terminal`, the terminal's own colours; `tokyo-night`) or a file name
+    /// under `<config>/themes/`.
+    pub name: String,
+    pub glyphs: GlyphTier,
+    /// Per-role colour overrides (`signal`, `accent`, `working`, `failed`, `info`, `text`,
+    /// `muted`, `rule`, `rule_active`, `surface`, `selection`, `on_accent`).
+    pub colors: BTreeMap<String, String>,
+}
+
+impl Default for ThemeSettings {
+    fn default() -> Self {
+        Self {
+            name: default_theme_name(),
+            glyphs: GlyphTier::default(),
+            colors: BTreeMap::new(),
+        }
+    }
+}
+
+fn default_theme_name() -> String {
+    "terminal".to_owned()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ThemeTable {
+    #[serde(default = "default_theme_name")]
+    name: String,
+    #[serde(default)]
+    glyphs: GlyphTier,
+    #[serde(default)]
+    colors: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ThemeValue {
+    Name(String),
+    Table(ThemeTable),
+}
+
+impl<'de> Deserialize<'de> for ThemeSettings {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        match ThemeValue::deserialize(deserializer)? {
+            ThemeValue::Name(name) => Ok(Self {
+                name,
+                ..Self::default()
+            }),
+            ThemeValue::Table(table) => Ok(Self {
+                name: table.name,
+                glyphs: table.glyphs,
+                colors: table.colors,
+            }),
+        }
+    }
 }
 
 /// The `worktree:` section.
@@ -165,7 +240,29 @@ mod tests {
         let config = load(&path).unwrap();
         assert_eq!(config.agent, AgentDefaults::default());
         assert_eq!(config.worktree, WorktreeSettings::default());
+        assert_eq!(config.theme, ThemeSettings::default());
         assert!(config.plugins.is_empty(), "{:?}", config.plugins);
+    }
+
+    #[test]
+    fn theme_accepts_a_name_or_a_table() {
+        let short = parse_text("theme: tokyo-night\n").unwrap();
+        assert_eq!(short.theme.name, "tokyo-night");
+        assert_eq!(short.theme.glyphs, GlyphTier::Unicode);
+
+        let full = parse_text(
+            "theme:\n  name: tokyo-night\n  glyphs: ascii\n  colors:\n    signal: \"#ffb000\"\n",
+        )
+        .unwrap();
+        assert_eq!(full.theme.name, "tokyo-night");
+        assert_eq!(full.theme.glyphs, GlyphTier::Ascii);
+        assert_eq!(
+            full.theme.colors.get("signal").map(String::as_str),
+            Some("#ffb000")
+        );
+
+        let error = parse_text("theme:\n  glyphs: emoji\n").unwrap_err();
+        assert!(error.0.starts_with("/c/config.yaml: "), "{error}");
     }
 
     fn parse_text(text: &str) -> Result<Config, UsageError> {

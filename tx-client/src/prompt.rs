@@ -2,8 +2,13 @@
 
 use std::process::{Command, Stdio};
 
+use crate::theme::active;
+
 /// fzf's query editor prefilled with `default`; `None` when cancelled.
 pub fn prompt_with_default(header: &str, default: &str) -> std::io::Result<Option<String>> {
+    let theme = active();
+    let prompt = format!("  {} ", theme.glyphs.prompt);
+    let colors = theme.fzf_color_arg(false);
     let output = Command::new("fzf")
         .args([
             "--disabled",
@@ -11,7 +16,7 @@ pub fn prompt_with_default(header: &str, default: &str) -> std::io::Result<Optio
             default,
             "--ansi",
             "--prompt",
-            "  ❯ ",
+            &prompt,
             "--header",
             header,
             "--header-first",
@@ -20,8 +25,7 @@ pub fn prompt_with_default(header: &str, default: &str) -> std::io::Result<Optio
             "--no-separator",
             "--bind",
             "enter:accept-or-print-query",
-            "--color",
-            "fg:#a9b1d6,header:#a9b1d6,prompt:#a9b1d6,query:#c0caf5",
+            &colors,
         ])
         .stdin(Stdio::null())
         .stderr(Stdio::inherit())

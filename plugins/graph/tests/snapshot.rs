@@ -80,7 +80,7 @@ fn the_header_names_the_filters_and_the_detail_a_hidden_parent() {
     assert!(text.contains("parent tx-assistant (hidden)"), "{text}");
     let text = run::snapshot(&mut app, 170, 30);
     assert!(
-        text.contains("┃ parent      tx-assistant (hidden)"),
+        text.contains("│ parent      tx-assistant (hidden)"),
         "the sidebar: {text}"
     );
     let mut app = app_with_tag("legacy");
@@ -195,7 +195,7 @@ fn a_wide_fan_shares_a_bus_and_keeps_each_badge_on_its_row() {
             let arrival = if compact { row } else { row + 1 };
             let line = text.lines().nth(arrival).unwrap();
             assert!(
-                line.contains(&format!(" {number} ▶")),
+                line.contains(&format!(" {number} ▸")),
                 "{columns} columns, {name}: {line:?}\n{text}"
             );
         }

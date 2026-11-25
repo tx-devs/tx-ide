@@ -24,10 +24,12 @@ fn press(cli: &Cli, keys: &[&str]) {
     assert!(outer(cli, &args).status.success());
 }
 
-/// What the outer terminal shows: the IDE's client, with any popup drawn over it.
+/// What the outer terminal shows: the IDE's client, with any popup drawn over it. A backdrop's
+/// half-blocks read as blanks: it may paint one in the gap between two words of the home's text,
+/// and which gap depends on the column and the moment.
 fn screen(cli: &Cli) -> String {
     String::from_utf8_lossy(&outer(cli, &["capture-pane", "-p", "-t", "=outer:"]).stdout)
-        .into_owned()
+        .replace('▀', " ")
 }
 
 fn clients(cli: &Cli) -> Vec<String> {
@@ -213,7 +215,7 @@ fn home_shown(cli: &Cli) -> bool {
         .lines()
         .filter(|line| !line.trim().is_empty())
         .collect();
-    lines.first().is_some_and(|line| line.contains("tx-ide"))
+    lines.first().is_some_and(|line| line.starts_with("tx "))
         && lines
             .last()
             .is_some_and(|line| line.contains("enter attach") || line.contains("enter resume"))
@@ -586,7 +588,7 @@ fn the_first_open_warms_the_assistant_once_and_the_header_follows() {
         screen(&cli)
     );
     assert!(
-        cli.wait_for(10, || screen(&cli).contains("assistant ◐ starting")),
+        cli.wait_for(10, || screen(&cli).contains("assistant ◌ starting")),
         "{}",
         screen(&cli)
     );
@@ -629,7 +631,7 @@ fn ask_nests_into_the_assistant_at_once() {
     attach_home(&cli);
     assert!(
         cli.wait_for(30, || screen(&cli)
-            .contains("assistant ◐ starting · claude")),
+            .contains("assistant ◌ starting · claude")),
         "{}",
         screen(&cli)
     );

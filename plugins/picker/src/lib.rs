@@ -21,10 +21,10 @@ use tx_core::events::now;
 use tx_core::{Agent, ListFilter, Plugin, PluginError, Registry, TxCore, Verb, VerbError, VerbIo};
 
 use tx_client::render::{
-    ACCENT_ANSI, BOLD, FG_ANSI, LOCATION_W, PickerEntry, RESET, ROLE_W, Row, SELECTION_BG,
-    WARN_ANSI, listed, picker_namew, picker_rows, role_of,
+    BOLD, LOCATION_W, PickerEntry, RESET, ROLE_W, Row, listed, picker_namew, picker_rows, role_of,
 };
-use tx_client::tmux::{ACCENT_HEX, BG_DEEP_HEX, DIM_FG_HEX, FG_HEX, Ui, shell_quote};
+use tx_client::theme::{Role, active};
+use tx_client::tmux::{Ui, shell_quote};
 use tx_client::views::{self, View};
 
 use picker_filter::{chips_line, hidden_path, panel_legend, panel_rows, read_hidden};
@@ -140,12 +140,17 @@ pub fn fzf_args(
         "{:<namew$}   {:<LOCATION_W$} {:<7} {:<6} {:<ROLE_W$} TAGS",
         "NAME", "LOCATION", "STARTED", "IDLE", "ROLE"
     );
+    let theme = active();
+    let accent_ansi = theme.ansi_fg(Role::Accent);
+    let fg_ansi = theme.ansi_fg(Role::Text);
+    let signal_ansi = theme.ansi_fg(Role::Signal);
+    let needs_you = theme.glyphs.needs_you;
     let focus_cmd = format!(
-        "printf '{ACCENT_ANSI}{BOLD}%s{RESET} {FG_ANSI}{BOLD}%s{RESET}\\n' {{1}} {{2}}; {chips}; \
+        "printf '{accent_ansi}{BOLD}%s{RESET} {fg_ansi}{BOLD}%s{RESET}\\n' {{1}} {{2}}; {chips}; \
          printf '%s' '{header_cols}'"
     );
     let arm_cmd = format!(
-        "printf '{WARN_ANSI}{BOLD} ⚠  Kill \"%s\"? [y/N]{RESET}\\n' {{1}}; {chips}; \
+        "printf '{signal_ansi}{BOLD} {needs_you}  Kill \"%s\"? [y/N]{RESET}\\n' {{1}}; {chips}; \
          printf '%s' '{header_cols}'"
     );
     let unbind_normal = toggle_normal_keys("unbind");
@@ -171,7 +176,7 @@ pub fn fzf_args(
         "--listen".to_owned(),
         "--track".to_owned(),
         "--with-shell=sh -c".to_owned(),
-        "--color=fg:#a9b1d6,pointer:#7aa2f7,fg+:#a9b1d6:regular,bg+:236:regular,hl:#7aa2f7,hl+:#7aa2f7,header:#a9b1d6,footer:#a9b1d6,prompt:#a9b1d6,query:#c0caf5".to_owned(),
+        theme.fzf_color_arg(false),
         format!("--header={}\n{header_cols}", chips_line(hidden)),
         format!("--footer={footer}"),
         format!("--query={query}"),
@@ -501,9 +506,10 @@ impl Verb for PickerPopup {
 }
 
 fn popup_footer(prefix: &str) -> String {
-    format!(
-        " #[fg={FG_HEX}]{prefix} d#[fg={DIM_FG_HEX}] closes the popup, the session keeps running"
-    )
+    let theme = active();
+    let text = theme.tmux_color(Role::Text);
+    let muted = theme.tmux_color(Role::Muted);
+    format!(" #[fg={text}]{prefix} d#[fg={muted}] closes the popup, the session keeps running")
 }
 
 /// The files the fzf binds share with the picker: the kill's arm, popup mode's pending pick.
@@ -698,10 +704,7 @@ impl Verb for RolesPanel {
         let reload = format!("reload-sync({own} _roles)");
         let toggle = format!("execute-silent({own} _toggle-hide {{1}})+{reload}");
         let toggle_all = format!("execute-silent({own} _toggle-hide --all)+{reload}");
-        let color = format!(
-            "bg:{BG_DEEP_HEX},fg:{DIM_FG_HEX},pointer:{ACCENT_HEX},fg+:{FG_HEX}:regular,\
-             bg+:{SELECTION_BG}:regular,header:{DIM_FG_HEX},prompt:{ACCENT_HEX}"
-        );
+        let color = active().fzf_color_arg(true);
         let feed = panel_rows(&read_hidden(&hidden_path(core)).map_err(hidden_failed)?);
         let mut child = Command::new("fzf")
             .args([
@@ -718,7 +721,7 @@ impl Verb for RolesPanel {
                 "--with-shell=sh -c",
                 "--prompt=  roles ",
                 &format!("--header={}", panel_legend()),
-                &format!("--color={color}"),
+                &color,
                 &format!("--bind=space:{toggle}"),
                 &format!("--bind=a:{toggle_all}"),
                 "--bind=j:down,k:up",
@@ -879,11 +882,16 @@ mod tests {
         let tx = "/x/tx --data-dir /s";
         let reload = format!("reload-sync({own} _list)");
         let chips = format!("{own} _roles --chips");
+        let theme = active();
+        let accent_ansi = theme.ansi_fg(Role::Accent);
+        let fg_ansi = theme.ansi_fg(Role::Text);
+        let signal_ansi = theme.ansi_fg(Role::Signal);
+        let needs_you = theme.glyphs.needs_you;
         let focus = format!(
-            "printf '\x1b[38;2;122;162;247m\x1b[1m%s\x1b[0m \x1b[38;2;192;202;245m\x1b[1m%s\x1b[0m\\n' {{1}} {{2}}; {chips}; printf '%s' '{HEADER}'"
+            "printf '{accent_ansi}\x1b[1m%s\x1b[0m {fg_ansi}\x1b[1m%s\x1b[0m\\n' {{1}} {{2}}; {chips}; printf '%s' '{HEADER}'"
         );
         let arm = format!(
-            "printf '\x1b[38;2;224;175;104m\x1b[1m ⚠  Kill \"%s\"? [y/N]\x1b[0m\\n' {{1}}; {chips}; printf '%s' '{HEADER}'"
+            "printf '{signal_ansi}\x1b[1m {needs_you}  Kill \"%s\"? [y/N]\x1b[0m\\n' {{1}}; {chips}; printf '%s' '{HEADER}'"
         );
         let unbind = toggle_normal_keys("unbind");
         let search = format!(
@@ -894,7 +902,7 @@ mod tests {
             "fzf".into(),
             "--exact".into(),
             "--ansi".into(),
-            "--prompt=  ❯ ".into(),
+            "--prompt=  › ".into(),
             "--height=100%".into(),
             "--reverse".into(),
             "--delimiter=\t".into(),
@@ -902,22 +910,34 @@ mod tests {
             "--listen".into(),
             "--track".into(),
             "--with-shell=sh -c".into(),
-            "--color=fg:#a9b1d6,pointer:#7aa2f7,fg+:#a9b1d6:regular,bg+:236:regular,hl:#7aa2f7,hl+:#7aa2f7,header:#a9b1d6,footer:#a9b1d6,prompt:#a9b1d6,query:#c0caf5".into(),
+            theme.fzf_color_arg(false),
             format!("--header={}\n{HEADER}", chips_line(&["shell"])),
             format!("--footer={}", normal_footer(false)),
             "--query=".into(),
-            format!("--bind=start:execute-silent(( while sleep 1; do [ -s \"$TX_DIGITS_FILE\" ] || curl -fsS -XPOST \"localhost:$FZF_PORT\" -d \"{reload}\" >/dev/null 2>&1 || exit 0; done ) &)"),
+            format!(
+                "--bind=start:execute-silent(( while sleep 1; do [ -s \"$TX_DIGITS_FILE\" ] || curl -fsS -XPOST \"localhost:$FZF_PORT\" -d \"{reload}\" >/dev/null 2>&1 || exit 0; done ) &)"
+            ),
             format!("--bind=ctrl-r:{reload}"),
             format!("--bind=r:{reload}"),
             format!("--bind=p:transform({own} _picker-key p)"),
             "--bind=alt-p:print(popup)+accept".into(),
             format!("--bind=focus:transform-header({focus})+execute-silent(: >\"$TX_ARM_FILE\")"),
             format!("--bind=tab:execute({own} _roles-panel)+{reload}+transform-header({focus})"),
-            format!("--bind=click-header:execute-silent({own} _toggle-hide --click \"$FZF_CLICK_HEADER_COLUMN\" \"$FZF_CLICK_HEADER_WORD\")+{reload}+transform-header({focus})"),
-            format!("--bind=ctrl-t:execute(tmux -S /k/tmux.sock display-popup -E -h 4 -w 60% \"{tx} _edit-tag {{1}}\")+{reload}"),
-            format!("--bind=t:execute(tmux -S /k/tmux.sock display-popup -E -h 4 -w 60% \"{tx} _edit-tag {{1}}\")+{reload}"),
-            format!("--bind=d:execute-silent(printf '%s' {{1}} >\"$TX_ARM_FILE\")+transform-header({arm})"),
-            format!("--bind=y:execute-silent([ -s \"$TX_ARM_FILE\" ] && {tx} kill {{1}} >/dev/null 2>&1; : >\"$TX_ARM_FILE\")+{reload}+transform-header({focus})"),
+            format!(
+                "--bind=click-header:execute-silent({own} _toggle-hide --click \"$FZF_CLICK_HEADER_COLUMN\" \"$FZF_CLICK_HEADER_WORD\")+{reload}+transform-header({focus})"
+            ),
+            format!(
+                "--bind=ctrl-t:execute(tmux -S /k/tmux.sock display-popup -E -h 4 -w 60% \"{tx} _edit-tag {{1}}\")+{reload}"
+            ),
+            format!(
+                "--bind=t:execute(tmux -S /k/tmux.sock display-popup -E -h 4 -w 60% \"{tx} _edit-tag {{1}}\")+{reload}"
+            ),
+            format!(
+                "--bind=d:execute-silent(printf '%s' {{1}} >\"$TX_ARM_FILE\")+transform-header({arm})"
+            ),
+            format!(
+                "--bind=y:execute-silent([ -s \"$TX_ARM_FILE\" ] && {tx} kill {{1}} >/dev/null 2>&1; : >\"$TX_ARM_FILE\")+{reload}+transform-header({focus})"
+            ),
             format!("--bind=n:transform-header({focus})+execute-silent(: >\"$TX_ARM_FILE\")"),
             "--bind=j:down,k:up,g:first,G:last,q:abort".into(),
             "--bind=ctrl-d:half-page-down,ctrl-u:half-page-up".into(),

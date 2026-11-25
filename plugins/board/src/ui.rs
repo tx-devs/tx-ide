@@ -7,8 +7,9 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
-use tx_client::palette::{self, palette};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
+use tx_client::palette::indexed;
+use tx_client::theme::{ColorDepth, Role, active};
 use tx_core::LlmEngineState;
 
 use super::app::{App, Picker};
@@ -17,52 +18,63 @@ use super::model::{Card, CardAgent, ColumnKind};
 
 /// Each card takes two rows: the number and title, then labels and agents.
 pub const CARD_ROWS: u16 = 2;
-const CURSOR_BG: Color = Color::Indexed(236);
 const KEYS: &str =
     "j/k h/l move  / filter  L labels  s start agent  Enter show agent  ? all keys  q quit";
 
 fn accent() -> Style {
-    Style::new().fg(palette(palette::ACCENT))
+    active().style(Role::Accent)
 }
 
 fn dim() -> Style {
-    Style::new()
-        .fg(palette(palette::DIM_FG))
-        .add_modifier(Modifier::DIM)
+    active().style(Role::Muted)
 }
 
 fn text() -> Style {
-    Style::new().fg(palette(palette::FG))
+    active().style(Role::Text)
 }
 
 fn info() -> Style {
-    Style::new().fg(palette(palette::INFO))
+    active().style(Role::Accent)
 }
 
-/// A label in its GitHub colour; the palette's warn colour when it has none.
+/// A label in its GitHub colour; the theme's signal colour when it has none.
 pub fn label_style(color: &str) -> Style {
-    let color = match rgb_of(color) {
-        Some((red, green, blue)) => Color::Rgb(red, green, blue),
-        None => palette::WARN,
+    let theme = active();
+    let Some((red, green, blue)) = rgb_of(color) else {
+        return theme.style(Role::Signal);
     };
-    Style::new().fg(palette(color))
-}
-
-pub fn state_style(state: LlmEngineState) -> Style {
-    match state {
-        LlmEngineState::Working => Style::new().fg(palette(palette::GREEN)),
-        LlmEngineState::Starting => Style::new().fg(palette(palette::WARN)),
-        LlmEngineState::Idle => info(),
-        LlmEngineState::Ended => dim(),
+    let rgb = Color::Rgb(red, green, blue);
+    match theme.depth {
+        ColorDepth::Truecolor => Style::new().fg(rgb),
+        ColorDepth::Ansi256 => Style::new().fg(indexed(rgb)),
+        ColorDepth::Ansi16 => theme.style(Role::Text),
+        ColorDepth::None => Style::new(),
     }
 }
 
-fn state_mark(state: LlmEngineState) -> &'static str {
+pub fn state_style(state: LlmEngineState, waiting: bool) -> Style {
+    let theme = active();
+    if waiting {
+        return theme.style(Role::Signal);
+    }
     match state {
-        LlmEngineState::Working => "●",
-        LlmEngineState::Starting => "◐",
-        LlmEngineState::Idle => "○",
-        LlmEngineState::Ended => "×",
+        LlmEngineState::Working => theme.style(Role::Working),
+        LlmEngineState::Starting | LlmEngineState::Idle | LlmEngineState::Ended => {
+            theme.style(Role::Muted)
+        }
+    }
+}
+
+fn state_mark(state: LlmEngineState, waiting: bool) -> &'static str {
+    let glyphs = active().glyphs;
+    if waiting {
+        return glyphs.needs_you;
+    }
+    match state {
+        LlmEngineState::Working => glyphs.working,
+        LlmEngineState::Starting => glyphs.starting,
+        LlmEngineState::Idle => glyphs.idle,
+        LlmEngineState::Ended => glyphs.ended,
     }
 }
 
@@ -122,7 +134,11 @@ fn header_line(app: &App, width: u16) -> Line<'static> {
         (false, None) => "not fetched".to_owned(),
     };
     let mut spans = vec![
-        Span::styled(" tx-board ", accent().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" {} ", tx_client::theme::MARK),
+            accent().add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("board  ", text().add_modifier(Modifier::BOLD)),
         Span::styled(app.board.repository.slug(), text()),
         Span::styled(format!("   {fetched}"), dim()),
     ];
@@ -156,21 +172,23 @@ fn ago(seconds: f64) -> String {
 }
 
 fn draw_column(app: &App, kind: ColumnKind, area: Rect, frame: &mut Frame) {
+    let theme = active();
     let index = kind as usize;
     let cards = app.column_of(kind);
-    let active = app.column == index;
-    let border = if active {
+    let is_active = app.column == index;
+    let border = if is_active {
         accent()
     } else {
-        Style::new().fg(palette(palette::BORDER_DIM))
+        theme.style(Role::Rule)
     };
-    let title = format!(" {} {} ", kind.title(), cards.len());
+    let title = tx_client::theme::titled(&format!("{} {}", kind.title(), cards.len()));
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
         .border_style(border)
         .title(Span::styled(
             title,
-            if active {
+            if is_active {
                 accent().add_modifier(Modifier::BOLD)
             } else {
                 dim()
@@ -183,14 +201,15 @@ fn draw_column(app: &App, kind: ColumnKind, area: Rect, frame: &mut Frame) {
     }
     let visible = usize::from(inner.height / CARD_ROWS);
     let first = app.scroll[index];
+    let selection = theme.selection_style();
     let mut lines: Vec<Line<'static>> = Vec::new();
     for (row, card) in cards.iter().enumerate().skip(first).take(visible) {
-        let selected = active && row == app.cursor[index];
+        let selected = is_active && row == app.cursor[index];
         let mut head = card_head(card, usize::from(inner.width));
         let mut tail = card_tail(card, usize::from(inner.width));
         if selected {
             for line in [&mut head, &mut tail] {
-                line.style = Style::new().bg(CURSOR_BG);
+                line.style = selection;
             }
         }
         lines.push(head);
@@ -227,9 +246,9 @@ fn card_tail(card: &Card, width: usize) -> Line<'static> {
         spans.push(Span::styled(word, label_style(&label.color)));
     }
     if let Some(agent) = card.agents.first() {
-        let word = format!("{} {}", state_mark(agent.state), agent.name);
+        let word = format!("{} {}", state_mark(agent.state, agent.waiting), agent.name);
         let word = truncate(&word, width.saturating_sub(used));
-        spans.push(Span::styled(word, state_style(agent.state)));
+        spans.push(Span::styled(word, state_style(agent.state, agent.waiting)));
     } else if let Some(assignee) = card.issue.assignees.first() {
         let word = truncate(&format!("@{}", assignee.login), width.saturating_sub(used));
         spans.push(Span::styled(word, dim()));
@@ -238,15 +257,16 @@ fn card_tail(card: &Card, width: usize) -> Line<'static> {
 }
 
 fn draw_drawer(app: &App, area: Rect, frame: &mut Frame) {
-    let border = Style::new().fg(palette(palette::BORDER_DIM));
+    let theme = active();
+    let border = theme.style(Role::Rule);
     let (title, lines) = match (app.help, app.selected()) {
-        (true, _) => (" keys ".to_owned(), help_lines()),
+        (true, _) => ("keys".to_owned(), help_lines()),
         (false, Some(card)) => (
-            format!(" #{} {} ", card.issue.number, card.issue.title),
+            format!("#{} {}", card.issue.number, card.issue.title),
             detail_lines(card, app.now),
         ),
         (false, None) => (
-            " board ".to_owned(),
+            "board".to_owned(),
             vec![Line::from(Span::styled(
                 if app.query.is_empty() {
                     "no issue in this column (h/l to move, n files one)"
@@ -257,11 +277,13 @@ fn draw_drawer(app: &App, area: Rect, frame: &mut Frame) {
             ))],
         ),
     };
+    let clipped = truncate(&title, usize::from(area.width.saturating_sub(8)));
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
         .border_style(border)
         .title(Span::styled(
-            truncate(&title, usize::from(area.width.saturating_sub(4))),
+            tx_client::theme::titled(&clipped),
             text().add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
@@ -329,14 +351,18 @@ fn detail_lines(card: &Card, now: f64) -> Vec<Line<'static>> {
 }
 
 fn agent_span(agent: &CardAgent) -> Span<'static> {
+    let label = if agent.waiting {
+        "needs you"
+    } else {
+        agent.state.as_str()
+    };
     Span::styled(
         format!(
-            "{} {} {}",
-            state_mark(agent.state),
-            agent.name,
-            agent.state.as_str()
+            "{} {} {label}",
+            state_mark(agent.state, agent.waiting),
+            agent.name
         ),
-        state_style(agent.state),
+        state_style(agent.state, agent.waiting),
     )
 }
 
@@ -387,7 +413,7 @@ fn footer_line(app: &App, width: u16) -> Line<'static> {
     match &app.notice {
         Some(notice) => Line::from(Span::styled(
             truncate(&format!(" {notice}"), width),
-            Style::new().fg(palette(palette::WARN)),
+            active().style(Role::Signal),
         )),
         None => Line::from(Span::styled(truncate(&format!(" {KEYS}"), width), dim())),
     }
@@ -396,9 +422,10 @@ fn footer_line(app: &App, width: u16) -> Line<'static> {
 /// What stands where the columns would be while `gh` cannot be used: what is wrong and the
 /// one command that fixes it.
 fn draw_problem(problem: &Failure, area: Rect, frame: &mut Frame) {
+    let theme = active();
     let (title, lines): (&str, Vec<(String, Style)>) = match problem {
         Failure::NotInstalled => (
-            " GitHub CLI is not installed ",
+            "GitHub CLI is not installed",
             vec![
                 (
                     "The board reads and edits issues through gh, GitHub's command line, which is not on PATH."
@@ -413,7 +440,7 @@ fn draw_problem(problem: &Failure, area: Rect, frame: &mut Frame) {
             ],
         ),
         Failure::NotLoggedIn(said) => (
-            " gh is not signed in ",
+            "gh is not signed in",
             vec![
                 (
                     "The board uses your GitHub login through gh; gh has none yet.".to_owned(),
@@ -426,16 +453,16 @@ fn draw_problem(problem: &Failure, area: Rect, frame: &mut Frame) {
                 ("r retries once you are signed in.".to_owned(), dim()),
             ],
         ),
-        Failure::Failed(reason) => (" GitHub did not answer ", vec![(reason.clone(), text())]),
+        Failure::Failed(reason) => ("GitHub did not answer", vec![(reason.clone(), text())]),
     };
+    let signal = theme.style(Role::Signal);
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::new().fg(palette(palette::WARN)))
+        .border_type(BorderType::Rounded)
+        .border_style(signal)
         .title(Span::styled(
-            title,
-            Style::new()
-                .fg(palette(palette::WARN))
-                .add_modifier(Modifier::BOLD),
+            tx_client::theme::titled(title),
+            signal.add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -466,12 +493,14 @@ fn draw_picker(picker: &mut Picker, area: Rect, frame: &mut Frame) {
         width,
         height,
     );
+    let theme = active();
     frame.render_widget(Clear, popup);
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(accent())
         .title(Span::styled(
-            format!(" labels of #{} ", picker.number),
+            tx_client::theme::titled(&format!("labels of #{}", picker.number)),
             accent().add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(popup);
@@ -484,6 +513,7 @@ fn draw_picker(picker: &mut Picker, area: Rect, frame: &mut Frame) {
         .map(|choice| choice.label.name.chars().count())
         .max()
         .unwrap_or(0);
+    let selection = theme.selection_style();
     let mut lines: Vec<Line<'static>> = picker
         .choices
         .iter()
@@ -505,7 +535,7 @@ fn draw_picker(picker: &mut Picker, area: Rect, frame: &mut Frame) {
                 Span::styled(description, dim()),
             ]);
             if index == picker.cursor {
-                line.style = Style::new().bg(CURSOR_BG);
+                line.style = selection;
             }
             line
         })
@@ -572,10 +602,14 @@ mod tests {
 
     #[test]
     fn labels_wear_their_github_colour() {
-        assert_eq!(
-            label_style("d73a4a").fg,
-            Some(palette(Color::Rgb(0xd7, 0x3a, 0x4a)))
-        );
-        assert_eq!(label_style("").fg, Some(palette(palette::WARN)));
+        let theme = active();
+        let expected = match theme.depth {
+            ColorDepth::Truecolor => Some(Color::Rgb(0xd7, 0x3a, 0x4a)),
+            ColorDepth::Ansi256 => Some(indexed(Color::Rgb(0xd7, 0x3a, 0x4a))),
+            ColorDepth::Ansi16 => theme.color(Role::Text),
+            ColorDepth::None => None,
+        };
+        assert_eq!(label_style("d73a4a").fg, expected);
+        assert_eq!(label_style("").fg, theme.style(Role::Signal).fg);
     }
 }

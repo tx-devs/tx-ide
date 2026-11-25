@@ -19,7 +19,7 @@ CONF=$(mktemp -t tx-keymap-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind -N "Show the shortcuts" ? display-popup -E -w 118 -h 30 -x C -y 1 -T " keys " "$TX keymap"
+bind -N "Show the shortcuts" ? display-popup -E -w 118 -h 30 -x C -y 1 -T '#[#{@tx-accent-style}] #{@tx-mark}#[default] · keys ' "$TX keymap"
 EOF2
 
 tmux source-file "$CONF"

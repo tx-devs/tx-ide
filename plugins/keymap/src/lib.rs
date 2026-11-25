@@ -46,8 +46,9 @@ impl Verb for Keymap {
             return Ok(2);
         }
         let failed = |error: &dyn std::fmt::Display| VerbError::Failed(error.to_string());
-        let bindings = bindings::Bindings::load(&Ui::from_core(core), &core.config().directories.data)
-            .map_err(|error| failed(&error))?;
+        let bindings =
+            bindings::Bindings::load(&Ui::from_core(core), &core.config().directories.data)
+                .map_err(|error| failed(&error))?;
         view::run(bindings).map_err(|error| failed(&error))?;
         Ok(0)
     }

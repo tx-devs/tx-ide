@@ -57,21 +57,17 @@ pub fn next(current: Option<usize>, len: usize) -> Option<usize> {
     (following < len).then_some(following)
 }
 
-/// Whether home drew this cell: a glyph, or a background such as the cursor bar.
+/// Whether home drew this cell: a glyph, a background, or a reverse cursor bar.
 pub fn is_text(cell: &Cell) -> bool {
-    cell.symbol() != " " || cell.bg != Color::Reset
+    cell.symbol() != " "
+        || cell.bg != Color::Reset
+        || cell.modifier.contains(ratatui::style::Modifier::REVERSED)
 }
 
 pub const MINIMUM_LIST_ROWS: u16 = 10;
 
-/// Plain "tx-ide" block letters.
-pub const LOGO: &[&str] = &[
-    "███ █ █     ███   █ ███",
-    " █  █ █      █    █ █  ",
-    " █   █  ███  █  ███ ███",
-    " █  █ █      █  █ █ █  ",
-    " █  █ █     ███ ███ ███",
-];
+/// The `tx` logo in pixels, two pixel rows to a cell: [`tx_client::theme::LOGO_PIXELS`].
+pub const LOGO: &[&str] = tx_client::theme::LOGO_PIXELS;
 
 /// (logo box, content area). The logo shows when `area.width >= logo width` and
 /// `area.height >= logo height + 1 (gap) + MINIMUM_LIST_ROWS + 2 (header, footer)`.
@@ -251,7 +247,7 @@ mod tests {
 
     #[test]
     fn the_logo_art_is_within_bounds_with_equal_width_rows() {
-        assert!(LOGO.len() <= 7);
+        assert!(LOGO.len().is_multiple_of(2) && LOGO.len() / 2 <= 7);
         let width = LOGO[0].chars().count();
         assert!(width <= 48);
         assert!(LOGO.iter().all(|row| row.chars().count() == width));

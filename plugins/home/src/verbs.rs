@@ -438,6 +438,7 @@ fn open(core: &TxCore, ui: &Ui, pane: &str, client: &str) -> Result<i32, VerbErr
     let choice_path = choice.to_string_lossy();
     let command = tx.shell(&[TUI_VERB, pane, "--popup", "--choice", &choice_path]);
     // -EE: a home that fails keeps its popup open, showing why.
+    let title = tx_client::theme::popup_title("home");
     ui.run(&[
         "display-popup",
         "-c",
@@ -451,12 +452,8 @@ fn open(core: &TxCore, ui: &Ui, pane: &str, client: &str) -> Result<i32, VerbErr
         "C",
         "-y",
         "C",
-        "-b",
-        "rounded",
-        "-S",
-        "fg=#7aa2f7",
         "-T",
-        " tx-ide ",
+        &title,
         &command,
     ])
     .map_err(failed)?;
@@ -489,12 +486,11 @@ struct Popup<'a> {
     height: &'a str,
     y: &'a str,
     title: &'a str,
-    /// The form popups (new agent, fork) wear the spawn / chat binds' heavy yellow frame.
-    form: bool,
 }
 
 fn popup(ui: &Ui, client: &str, spec: &Popup<'_>, command: &str) {
-    let mut args = vec![
+    let title = tx_client::theme::popup_title(spec.title);
+    let args = [
         "display-popup",
         "-c",
         client,
@@ -507,11 +503,10 @@ fn popup(ui: &Ui, client: &str, spec: &Popup<'_>, command: &str) {
         "C",
         "-y",
         spec.y,
+        "-T",
+        &title,
+        command,
     ];
-    if spec.form {
-        args.extend(["-b", "heavy", "-S", "fg=yellow,bold"]);
-    }
-    args.extend(["-T", spec.title, command]);
     if let Err(error) = ui.run(&args) {
         status(ui, client, &format!("tx home: {error}"));
     }
@@ -684,8 +679,7 @@ impl Performer<'_> {
                         width: "94",
                         height: "23",
                         y: "C",
-                        title: " New agent ",
-                        form: true,
+                        title: "new agent",
                     },
                     &tx.shell(&[
                         "_new-agent",
@@ -719,8 +713,7 @@ impl Performer<'_> {
                         width: "118",
                         height: "30",
                         y: "1",
-                        title: " timeline ",
-                        form: false,
+                        title: "timeline",
                     },
                     &tx.shell(&["_timeline-attach"]),
                 );

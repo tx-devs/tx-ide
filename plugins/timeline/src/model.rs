@@ -24,7 +24,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use serde_json::{Value, json};
-use tx_core::{Agent, AgentId, CoreError, ListFilter, LlmEngineState, TxCore};
+use tx_core::{Agent, AgentId, CoreError, IdleReason, ListFilter, LlmEngineState, TxCore};
 
 use super::cache::TranscriptCache;
 use super::clock;
@@ -105,6 +105,7 @@ pub struct Lane {
     pub metadata: Metadata,
     pub blurb: String,
     pub state: String,
+    pub waiting: bool,
     pub sys: bool,
     pub live: bool,
     pub kill: Option<f64>,
@@ -722,6 +723,9 @@ impl Builder {
                 .cloned()
                 .unwrap_or_default()
                 .with_launch_fallback(model.as_deref(), effort.as_deref());
+            let waiting = live
+                && primary.state == LlmEngineState::Idle
+                && primary.idle_reason == Some(IdleReason::Waiting);
             lanes.push(Lane {
                 sid: primary.id.to_string(),
                 name: seed.name.clone(),
@@ -734,6 +738,7 @@ impl Builder {
                     blurb
                 },
                 state,
+                waiting,
                 sys: tags.contains("tx-system"),
                 live,
                 kill: kill.map(|at| round2(minutes(at))),

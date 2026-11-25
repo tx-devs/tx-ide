@@ -219,7 +219,7 @@ impl Data<'_> {
     }
 }
 
-/// Whether a `◐` spinner shows: an agent or the assistant is starting.
+/// Whether the starting spinner shows: an agent or the assistant is starting.
 fn spinning(home: &Home) -> bool {
     home.context
         .agents
@@ -275,12 +275,9 @@ fn event_loop(
         let periodic = animating || spinning(home);
         if changed || (periodic && last_frame.elapsed() >= interval) {
             last_frame = Instant::now();
-            // A coarse spinner clock, so it turns at 4 Hz whatever the frame rate.
-            let spinner = (started.elapsed().as_millis() / 250) as usize;
             terminal.draw(|f| {
                 ui::draw_frame(
                     home,
-                    spinner,
                     backdrop
                         .as_deref_mut()
                         .map(|backdrop| backdrop as &mut dyn Backdrop),

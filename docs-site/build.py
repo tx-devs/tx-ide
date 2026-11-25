@@ -32,15 +32,26 @@ LANDING = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tx-ide docs</title>
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <style>
-  body {{ font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem; color: #222; }}
-  h1 {{ font-size: 1.6rem; margin-bottom: 0.5rem; }}
+  body {{ font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem; color: #1b2029; background: #ffffff; }}
+  .brand {{ display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }}
+  .brand svg {{ width: 42px; height: 24px; flex: none; }}
+  h1 {{ font-size: 1.6rem; margin: 0; }}
+  a {{ color: #0d7a72; }}
   ul {{ padding-left: 1.2rem; }}
   li {{ margin: 0.4rem 0; }}
-  .label {{ color: #777; font-size: 0.85rem; margin-top: 2.5rem; }}
-  @media (prefers-color-scheme: dark) {{ body {{ background: #1b1b1b; color: #ddd; }} a {{ color: #8ab4f8; }} }}
+  .label {{ color: #636b7c; font-size: 0.85rem; margin-top: 2.5rem; }}
+  @media (prefers-color-scheme: dark) {{
+    body {{ background: #141820; color: #d8dce6; }}
+    a {{ color: #32b8ac; }}
+    .label {{ color: #7b8299; }}
+  }}
 </style>
-<h1>tx-ide docs</h1>
+<div class="brand">
+  {mark_svg}
+  <h1>tx-ide docs</h1>
+</div>
 <p>tx-ide is a plain core for a swarm of interactive coding agents in tmux: each agent is an
 engine process (Claude Code, Codex) in its own git worktree, with a durable record, on tx's own
 tmux server. The guide explains how the pieces fit; the API reference documents the
@@ -147,7 +158,13 @@ def main():
               f"{len(view['urls'])} linked to rustdoc pages")
     guide = build_guide(site)
     print(f"guide: {guide}")
-    (site / "index.html").write_text(LANDING.format(label=html.escape(label)))
+    assets_src = HERE / "assets"
+    if assets_src.is_dir():
+        assets_dst = site / "assets"
+        shutil.rmtree(assets_dst, ignore_errors=True)
+        shutil.copytree(assets_src, assets_dst)
+    mark_svg = (assets_src / "tx-mark.svg").read_text().strip()
+    (site / "index.html").write_text(LANDING.format(label=html.escape(label), mark_svg=mark_svg))
     (site / ".nojekyll").touch()
     print(f"open {site / 'internal' / 'tx_core' / 'index.html'}")
 

@@ -12,6 +12,5 @@ client_name="$2"
 # Centred on the client screen; the nvim form (the spawn plugin's tx-new-agent.lua) needs 92
 # columns and 21 rows. The popup closes when the form exits; the outcome is on the status line.
 printf -v new_agent_command '%s _new-agent %q %q' "$TX" "$pane_id" "$client_name"
-exec tmux display-popup -c "$client_name" -E -w 94 -h 23 -x C -y C -b heavy \
-  -S "fg=yellow,bold" \
-  -T ' New agent ' "$new_agent_command"
+exec tmux display-popup -c "$client_name" -E -w 94 -h 23 -x C -y C \
+  -T '#[#{@tx-accent-style}] #{@tx-mark}#[default] · new agent ' "$new_agent_command"

@@ -229,7 +229,7 @@ impl<'a> Wizard<'a> {
             .map(|(row, text)| {
                 if row == self.cursor {
                     Line::styled(
-                        format!("> {text}"),
+                        format!("› {text}"),
                         Style::new().add_modifier(Modifier::REVERSED),
                     )
                 } else {
@@ -336,7 +336,7 @@ mod tests {
                 "tx setup: full   (5 of 5 plugins)",
                 KEYS,
                 "",
-                "> [x] engine  core   The engine plugin.",
+                "› [x] engine  core   The engine plugin.",
                 "  [x] home    ide    The home plugin.",
                 "  [x] ide     ide    The ide plugin.",
                 "  [x] labels  core   The labels plugin.  needs tx-setup-no-such-program (not found)",
@@ -491,6 +491,6 @@ mod tests {
         let last: String = (0..area.width)
             .map(|column| buffer[(column, 5)].symbol())
             .collect();
-        assert!(last.starts_with("> [ ] link "), "{last}");
+        assert!(last.starts_with("› [ ] link "), "{last}");
     }
 }

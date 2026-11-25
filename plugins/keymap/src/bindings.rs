@@ -26,7 +26,9 @@ pub struct Binding {
 impl Binding {
     /// The note, else the command with tx's directory flags dropped.
     pub fn description(&self) -> String {
-        self.note.clone().unwrap_or_else(|| without_directory_flags(&self.command))
+        self.note
+            .clone()
+            .unwrap_or_else(|| without_directory_flags(&self.command))
     }
 }
 
@@ -53,12 +55,24 @@ impl Bindings {
             .lines()
             .filter_map(parse_bind_line)
             .map(|(key, command)| {
-                let owner = owners.get(&key).map_or(Owner::Tmux, |id| Owner::Tx(id.clone()));
+                let owner = owners
+                    .get(&key)
+                    .map_or(Owner::Tmux, |id| Owner::Tx(id.clone()));
                 let note = notes.get(&key).cloned();
-                (key, Binding { command, note, owner })
+                (
+                    key,
+                    Binding {
+                        command,
+                        note,
+                        owner,
+                    },
+                )
             })
             .collect();
-        let prefix = ui.run(&["show-options", "-gv", "prefix"])?.trim().to_owned();
+        let prefix = ui
+            .run(&["show-options", "-gv", "prefix"])?
+            .trim()
+            .to_owned();
         Ok(Bindings { keys, prefix })
     }
 }
@@ -70,7 +84,11 @@ fn installed_keys(text: &str) -> BTreeMap<String, String> {
             let mut fields = line.split('\t');
             let id = fields.next()?;
             let keys = fields.find_map(|field| field.strip_prefix("keys="))?;
-            Some(keys.split_whitespace().map(|key| (key.to_owned(), id.to_owned())).collect::<Vec<_>>())
+            Some(
+                keys.split_whitespace()
+                    .map(|key| (key.to_owned(), id.to_owned()))
+                    .collect::<Vec<_>>(),
+            )
         })
         .flatten()
         .collect()
@@ -81,9 +99,16 @@ fn installed_keys(text: &str) -> BTreeMap<String, String> {
 fn parse_bind_line(line: &str) -> Option<(String, String)> {
     let rest = line.strip_prefix("bind-key")?.trim_start();
     let rest = rest.strip_prefix("-r").unwrap_or(rest).trim_start();
-    let rest = rest.strip_prefix("-T")?.trim_start().strip_prefix("prefix")?.trim_start();
+    let rest = rest
+        .strip_prefix("-T")?
+        .trim_start()
+        .strip_prefix("prefix")?
+        .trim_start();
     let (key, command) = rest.split_once(char::is_whitespace)?;
-    let key = key.strip_prefix('\\').filter(|unescaped| !unescaped.is_empty()).unwrap_or(key);
+    let key = key
+        .strip_prefix('\\')
+        .filter(|unescaped| !unescaped.is_empty())
+        .unwrap_or(key);
     Some((key.to_owned(), command.trim().to_owned()))
 }
 
@@ -95,7 +120,15 @@ fn without_directory_flags(command: &str) -> String {
     for word in command.split(' ') {
         if skip_next {
             skip_next = false;
-        } else if ["--config-dir", "--data-dir", "--state-dir", "--cache-dir", "--run-dir"].contains(&word) {
+        } else if [
+            "--config-dir",
+            "--data-dir",
+            "--state-dir",
+            "--cache-dir",
+            "--run-dir",
+        ]
+        .contains(&word)
+        {
             skip_next = true;
         } else {
             words.push(word);
@@ -118,12 +151,16 @@ mod tests {
             parse_bind_line(r"bind-key    -T prefix \;      last-pane"),
             Some((";".to_owned(), "last-pane".to_owned()))
         );
-        assert_eq!(parse_bind_line(r"bind-key    -T prefix \\      x"), Some(("\\".to_owned(), "x".to_owned())));
+        assert_eq!(
+            parse_bind_line(r"bind-key    -T prefix \\      x"),
+            Some(("\\".to_owned(), "x".to_owned()))
+        );
     }
 
     #[test]
     fn installed_keys_map_each_key_to_its_plugin() {
-        let owners = installed_keys("ide\tkeys=C-h C-j\tunset=\tunhook=\nedit\tkeys=e\tunset=\tunhook=\n");
+        let owners =
+            installed_keys("ide\tkeys=C-h C-j\tunset=\tunhook=\nedit\tkeys=e\tunset=\tunhook=\n");
         assert_eq!(owners.get("C-j").map(String::as_str), Some("ide"));
         assert_eq!(owners.get("e").map(String::as_str), Some("edit"));
     }

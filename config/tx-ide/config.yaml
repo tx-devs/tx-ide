@@ -18,3 +18,8 @@ worktree:
   # and a respawned agent rebuilds them. Relative to the worktree; no `..`, nothing git tracks.
   # A Node project would add node_modules and dist.
   build_outputs: [target]
+
+# The colours of everything tx draws (`tx update` applies a change).
+theme:
+  name: terminal               # terminal: the terminal's own colours | tokyo-night | <themes/name>
+  glyphs: unicode              # unicode | ascii

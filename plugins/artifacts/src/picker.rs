@@ -11,8 +11,9 @@
 use std::io;
 
 use tx_client::editor::{Decoder, Key, Terminal, read_key, write_all};
-use tx_client::render::{ACCENT_ANSI, BOLD, DIM_FG_ANSI, RESET, SELECTION_BG};
+use tx_client::render::{BOLD, RESET};
 use tx_client::show::Show;
+use tx_client::theme::{Role, active};
 
 pub const HINT: &str = "key go to row   a attach to a pane   p popup   Esc close";
 /// Screen lines that are not list: the header, a blank line and the hint.
@@ -128,13 +129,22 @@ impl<'a> Picker<'a> {
     /// The screen: the header, the items that fit between it and the hint (scrolled just far
     /// enough to show the cursor's row, on the selection background), the hint last.
     pub fn render(&self, height: usize, width: usize) -> String {
+        let theme = active();
+        let muted = theme.ansi_fg(Role::Muted);
+        let accent = theme.ansi_fg(Role::Accent);
+        let selection_bg = theme.ansi_bg(Role::Selection);
+        let selection = if selection_bg.is_empty() {
+            "\x1b[7m"
+        } else {
+            &selection_bg
+        };
         let mut out = String::from("\x1b[0m\x1b[H\x1b[2J");
         let mut put = |screen_row: usize, text: &str| {
             if screen_row < height {
                 out += &format!("\x1b[{};1H{text}{RESET}", screen_row + 1);
             }
         };
-        put(0, &format!("{DIM_FG_ANSI}{}", self.header));
+        put(0, &format!("{muted}{}", self.header));
         let visible = height.saturating_sub(CHROME_ROWS).max(1);
         let first = (self.cursor_item() + 1).saturating_sub(visible);
         let mut row = self.items[..first]
@@ -143,10 +153,10 @@ impl<'a> Picker<'a> {
             .count();
         for (offset, item) in self.items[first..].iter().take(visible).enumerate() {
             let line = match item {
-                Item::Section(title) => format!("{ACCENT_ANSI}{BOLD}{title}"),
+                Item::Section(title) => format!("{accent}{BOLD}{title}"),
                 Item::Row(line) if row == self.cursor => {
                     let fill = width.saturating_sub(visible_width(line));
-                    format!("\x1b[48;5;{SELECTION_BG}m{line}{}", " ".repeat(fill))
+                    format!("{selection}{line}{}", " ".repeat(fill))
                 }
                 Item::Row(line) => line.clone(),
             };
@@ -156,7 +166,7 @@ impl<'a> Picker<'a> {
             put(1 + offset, &line);
         }
         if height >= CHROME_ROWS {
-            put(height - 1, &format!("{DIM_FG_ANSI}{HINT}"));
+            put(height - 1, &format!("{muted}{HINT}"));
         }
         out
     }

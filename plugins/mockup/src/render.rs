@@ -6,8 +6,10 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Text};
-use ratatui::widgets::{Block, List, ListState, Paragraph, Row, StatefulWidget, Table, Widget};
-use tx_client::palette::{ACCENT, WARN};
+use ratatui::widgets::{
+    Block, BorderType, List, ListState, Paragraph, Row, StatefulWidget, Table, Widget,
+};
+use tx_client::theme::{Role, active};
 
 use crate::markup::lines;
 use crate::model::{Choice, Kind, Node, Screen, Size};
@@ -67,9 +69,10 @@ pub fn draw(screen: &Screen, state: &ViewState, elapsed: Duration, area: Rect, b
     .areas(area);
     Paragraph::new(Text::from(header)).render(header_area, buf);
 
+    let theme = active();
     let bottom_line = match &state.error {
-        Some(error) => Line::styled(error.clone(), Style::new().fg(WARN)),
-        None => Line::raw(HINT),
+        Some(error) => Line::styled(error.clone(), theme.style(Role::Signal)),
+        None => Line::styled(HINT, theme.style(Role::Muted)),
     };
     Paragraph::new(bottom_line).render(bottom, buf);
 
@@ -112,20 +115,25 @@ impl Context {
         area: Rect,
         buf: &mut Buffer,
     ) {
+        let theme = active();
         let letter = (b'A' + (index % 26) as u8) as char;
         let selected = state.selected == Some(index);
         let mut title = format!("{letter} · {}", choice.title);
         if selected {
             title.push_str(" ✓");
         }
-        let mut border = Style::new();
-        if selected {
-            border = border.fg(ACCENT);
-        }
+        let mut border = if selected {
+            theme.style(Role::Accent)
+        } else {
+            theme.style(Role::Rule)
+        };
         if state.focus == index {
             border = border.add_modifier(Modifier::BOLD);
         }
-        let block = Block::bordered().title(title).border_style(border);
+        let block = Block::bordered()
+            .border_type(BorderType::Plain)
+            .title(tx_client::theme::titled(&title))
+            .border_style(border);
         let inner = block.inner(area);
         block.render(area, buf);
         match &choice.note {
@@ -219,7 +227,6 @@ mod tests {
     use crate::model::parse;
     use ratatui::style::{Color, Modifier};
 
-    const WARN: Color = Color::Rgb(224, 175, 104);
     const HINT: &str = "1-9 pick";
 
     fn rows(buf: &Buffer) -> Vec<String> {
@@ -290,7 +297,10 @@ mod tests {
         assert!(last.contains("line 3 col 9: boom"), "{last}");
         assert!(!last.contains(HINT), "{last}");
         let (x, y) = find(&buf, "line 3 col 9");
-        assert_eq!(buf.cell((x, y)).unwrap().fg, WARN);
+        assert_eq!(
+            buf.cell((x, y)).unwrap().fg,
+            active().color(Role::Signal).unwrap_or(Color::Reset)
+        );
     }
 
     #[test]

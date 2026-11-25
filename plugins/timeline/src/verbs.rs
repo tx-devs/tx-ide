@@ -277,6 +277,7 @@ impl Verb for TimelineOpen {
             return Ok(2);
         };
         let command = tx_command(core, &[ATTACH_VERB, pane, client]);
+        let title = tx_client::theme::popup_title("timeline");
         Ui::from_core(core)
             .run(&[
                 "display-popup",
@@ -292,7 +293,7 @@ impl Verb for TimelineOpen {
                 "-y",
                 "1",
                 "-T",
-                " timeline ",
+                &title,
                 &command,
             ])
             .map_err(failed)?;

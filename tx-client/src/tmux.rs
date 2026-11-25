@@ -469,8 +469,8 @@ impl Ui {
     }
 
     /// Nest-attaches `session` (an agent or a view) in a popup covering most of `client`'s
-    /// terminal. While it is open the session's status line shows `footer`; it is hidden again
-    /// when the popup closes.
+    /// terminal. While it is open the session's status line shows `footer`, a plain dim hint; it
+    /// is hidden again when the popup closes.
     pub fn popup_attach(
         &self,
         client: &str,
@@ -478,9 +478,8 @@ impl Ui {
         footer: &str,
         session: &str,
     ) -> Result<(), UiError> {
-        let status_style = format!("bg={BG_DEEP_HEX},fg={DIM_FG_HEX}");
         self.set_session_option(session, "status", "on")?;
-        self.set_session_option(session, "status-style", &status_style)?;
+        self.set_session_option(session, "status-style", "bg=default,fg=default")?;
         self.set_session_option(session, "status-format[0]", footer)?;
         let command = popup_attach_command(&self.socket.to_string_lossy(), session);
         let shown = self.display_popup(client, "90%", "90%", title, &command);
@@ -499,7 +498,8 @@ impl Ui {
     }
 }
 
-/// The argv of a `width`×`height` popup centred on `client`, in the picker's palette.
+/// The argv of a `width`×`height` popup centred on `client`. Its border and colours are the
+/// server's popup options, which the theme sets.
 pub fn popup_args(
     client: &str,
     width: &str,
@@ -507,9 +507,7 @@ pub fn popup_args(
     title: &str,
     command: &str,
 ) -> Vec<String> {
-    let style = format!("bg={BG_DEEP_HEX},fg={DIM_FG_HEX}");
-    let border = format!("bg={BG_DEEP_HEX},fg={ACCENT_HEX}");
-    let title = format!("#[fg={ACCENT_HEX},bold]{title}#[default]");
+    let title = crate::theme::popup_title(title);
     [
         "display-popup",
         "-c",
@@ -523,12 +521,6 @@ pub fn popup_args(
         width,
         "-h",
         height,
-        "-b",
-        "rounded",
-        "-s",
-        &style,
-        "-S",
-        &border,
         "-T",
         &title,
         command,

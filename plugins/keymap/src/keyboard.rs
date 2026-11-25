@@ -13,7 +13,11 @@ pub enum Platform {
 impl Platform {
     /// The keyboard tx runs on; tx targets macOS.
     pub fn native() -> Platform {
-        if cfg!(target_os = "macos") { Platform::Mac } else { Platform::Windows }
+        if cfg!(target_os = "macos") {
+            Platform::Mac
+        } else {
+            Platform::Windows
+        }
     }
 
     pub fn next(self) -> Platform {
@@ -56,7 +60,10 @@ impl Mode {
     }
 
     pub fn next(self) -> Mode {
-        let index = Mode::ALL.iter().position(|mode| *mode == self).expect("every mode is listed");
+        let index = Mode::ALL
+            .iter()
+            .position(|mode| *mode == self)
+            .expect("every mode is listed");
         Mode::ALL[(index + 1) % Mode::ALL.len()]
     }
 
@@ -90,30 +97,76 @@ pub struct Cap {
 pub const WIDTH_IN_QUARTERS: u16 = 74;
 const ARROWS_START: u16 = 62;
 
-type Key = (u16, &'static str, Option<&'static str>, Option<&'static str>);
+type Key = (
+    u16,
+    &'static str,
+    Option<&'static str>,
+    Option<&'static str>,
+);
 
 /// A US ANSI board with the arrow keys, its bottom row the `platform`'s.
 pub fn keyboard(platform: Platform) -> Vec<Cap> {
-    let pair = |base: &'static str, shifted: &'static str| -> Key { (4, base, Some(base), Some(shifted)) };
-    let pairs = |keys: &[(&'static str, &'static str)]| keys.iter().map(|&(base, shifted)| pair(base, shifted)).collect::<Vec<_>>();
+    let pair =
+        |base: &'static str, shifted: &'static str| -> Key { (4, base, Some(base), Some(shifted)) };
+    let pairs = |keys: &[(&'static str, &'static str)]| {
+        keys.iter()
+            .map(|&(base, shifted)| pair(base, shifted))
+            .collect::<Vec<_>>()
+    };
     let inert = |width: u16, symbol: &'static str| -> Key { (width, symbol, None, None) };
     let rows: [Vec<Key>; 5] = [
         [
-            pairs(&[("`", "~"), ("1", "!"), ("2", "@"), ("3", "#"), ("4", "$"), ("5", "%"), ("6", "^")]),
-            pairs(&[("7", "&"), ("8", "*"), ("9", "("), ("0", ")"), ("-", "_"), ("=", "+")]),
+            pairs(&[
+                ("`", "~"),
+                ("1", "!"),
+                ("2", "@"),
+                ("3", "#"),
+                ("4", "$"),
+                ("5", "%"),
+                ("6", "^"),
+            ]),
+            pairs(&[
+                ("7", "&"),
+                ("8", "*"),
+                ("9", "("),
+                ("0", ")"),
+                ("-", "_"),
+                ("=", "+"),
+            ]),
             vec![(8, "⌫", Some("BSpace"), None)],
         ]
         .concat(),
         [
             vec![(6, "⇥", Some("Tab"), Some("BTab"))],
-            pairs(&[("q", "Q"), ("w", "W"), ("e", "E"), ("r", "R"), ("t", "T"), ("y", "Y")]),
-            pairs(&[("u", "U"), ("i", "I"), ("o", "O"), ("p", "P"), ("[", "{"), ("]", "}")]),
+            pairs(&[
+                ("q", "Q"),
+                ("w", "W"),
+                ("e", "E"),
+                ("r", "R"),
+                ("t", "T"),
+                ("y", "Y"),
+            ]),
+            pairs(&[
+                ("u", "U"),
+                ("i", "I"),
+                ("o", "O"),
+                ("p", "P"),
+                ("[", "{"),
+                ("]", "}"),
+            ]),
             vec![(6, "\\", Some("\\"), Some("|"))],
         ]
         .concat(),
         [
             vec![inert(7, "⇪")],
-            pairs(&[("a", "A"), ("s", "S"), ("d", "D"), ("f", "F"), ("g", "G"), ("h", "H")]),
+            pairs(&[
+                ("a", "A"),
+                ("s", "S"),
+                ("d", "D"),
+                ("f", "F"),
+                ("g", "G"),
+                ("h", "H"),
+            ]),
             pairs(&[("j", "J"), ("k", "K"), ("l", "L"), (";", ":"), ("'", "\"")]),
             vec![(9, "⏎", Some("Enter"), None)],
         ]
@@ -150,13 +203,32 @@ pub fn keyboard(platform: Platform) -> Vec<Cap> {
     for (row, keys) in (0..).zip(rows) {
         let mut start = 0;
         for (width, symbol, base, shifted) in keys {
-            caps.push(Cap { row, start, width, symbol, base, shifted });
+            caps.push(Cap {
+                row,
+                start,
+                width,
+                symbol,
+                base,
+                shifted,
+            });
             start += width;
         }
     }
-    let arrows = [(3, 4, "↑", "Up"), (4, 0, "←", "Left"), (4, 4, "↓", "Down"), (4, 8, "→", "Right")];
+    let arrows = [
+        (3, 4, "↑", "Up"),
+        (4, 0, "←", "Left"),
+        (4, 4, "↓", "Down"),
+        (4, 8, "→", "Right"),
+    ];
     for (row, offset, symbol, key) in arrows {
-        caps.push(Cap { row, start: ARROWS_START + offset, width: 4, symbol, base: Some(key), shifted: None });
+        caps.push(Cap {
+            row,
+            start: ARROWS_START + offset,
+            width: 4,
+            symbol,
+            base: Some(key),
+            shifted: None,
+        });
     }
     caps
 }
@@ -217,10 +289,16 @@ pub fn tmux_key_name(key: KeyEvent) -> Option<String> {
 /// `h` is `C-h` and in the base mode `X` is `x`.
 pub fn in_mode(key: &str, mode: Mode, caps: &[Cap]) -> String {
     let mut bare = key;
-    while let Some(after) = bare.strip_prefix("C-").or(bare.strip_prefix("M-")).or(bare.strip_prefix("S-")) {
+    while let Some(after) = bare
+        .strip_prefix("C-")
+        .or(bare.strip_prefix("M-"))
+        .or(bare.strip_prefix("S-"))
+    {
         bare = after;
     }
-    let cap = caps.iter().find(|cap| cap.base == Some(bare) || cap.shifted == Some(bare));
+    let cap = caps
+        .iter()
+        .find(|cap| cap.base == Some(bare) || cap.shifted == Some(bare));
     match cap.and_then(|cap| cap.key(mode)) {
         Some((name, _)) => name,
         None => match mode {
@@ -252,9 +330,9 @@ pub fn keystroke(key: &str, caps: &[Cap], platform: Platform) -> String {
         }
     }
     let mac = platform == Platform::Mac;
-    let shifted_cap = caps
-        .iter()
-        .find(|cap| cap.shifted == Some(rest) && cap.base.is_some_and(|base| base.chars().count() == 1));
+    let shifted_cap = caps.iter().find(|cap| {
+        cap.shifted == Some(rest) && cap.base.is_some_and(|base| base.chars().count() == 1)
+    });
     let label = if rest == "BTab" {
         shift = true;
         if mac { "⇥" } else { "Tab" }.to_owned()
@@ -280,7 +358,11 @@ pub fn keystroke(key: &str, caps: &[Cap], platform: Platform) -> String {
         };
         if mac { mac_label } else { windows_label }.to_owned()
     };
-    let modifiers = [(control, "⌃", "Ctrl"), (alt, "⌥", "Alt"), (shift, "⇧", "Shift")];
+    let modifiers = [
+        (control, "⌃", "Ctrl"),
+        (alt, "⌥", "Alt"),
+        (shift, "⇧", "Shift"),
+    ];
     let held = modifiers.iter().filter(|(on, _, _)| *on);
     if mac {
         let glyphs: String = held.map(|(_, glyph, _)| *glyph).collect();
@@ -321,7 +403,11 @@ mod tests {
         for platform in [Platform::Mac, Platform::Windows] {
             let caps = keyboard(platform);
             for row in 0..5 {
-                let width: u16 = caps.iter().filter(|cap| cap.row == row && cap.start < ARROWS_START).map(|cap| cap.width).sum();
+                let width: u16 = caps
+                    .iter()
+                    .filter(|cap| cap.row == row && cap.start < ARROWS_START)
+                    .map(|cap| cap.width)
+                    .sum();
                 assert_eq!(width, 60, "{platform:?} row {row}");
             }
         }

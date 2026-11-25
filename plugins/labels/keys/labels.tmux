@@ -27,7 +27,8 @@ trap 'rm -f "$CONF"' EXIT
 # A new window in a VIEW gets window-top pane borders (so nested panes carry a labelled border).
 # A view is marked by the @tx-view session option, so the hook reads it directly with `if-shell
 # -F` (non-empty/non-zero = true).
-# No trailing space after the label: its state mark is right-aligned and reaches tmux's inset.
+# The pane's number leads, in the accent on the active pane; `default` in a border format is the
+# border's own style, so the header keeps the theme's fill behind every span.
 # The label runs the program that answers `_label-program`, once resolved here: as a bundle that
 # is `tx-labels`, which tmux then starts directly (the label does not pass through `tx`);
 # compiled into `tx`, or when the verb fails, it is `tx` itself.
@@ -35,7 +36,7 @@ LABEL=$($TX _label-program 2>/dev/null) || LABEL=""
 [ -n "$LABEL" ] || LABEL=$TX_BIN
 
 cat >>"$CONF" <<EOF2
-set -g pane-border-format " [#P] #($LABEL #{@tx-arguments} _pane-label #D #{@tx-label-rev})"
+set -g pane-border-format " #[#{?pane_active,#{@tx-accent-style},#{@tx-muted-style}}]#P#[default] #($LABEL #{@tx-arguments} _pane-label #D #{@tx-label-rev}) "
 set-hook -g after-new-window "if-shell -F '#{@tx-view}' 'setw pane-border-status top'"
 EOF2
 

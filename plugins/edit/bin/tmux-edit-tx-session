@@ -17,6 +17,5 @@ popup_width=$((pane_width - 4))
 printf -v edit_command '%s _edit-session %q %q' "$TX" "$pane_id" "$client_name"
 exec tmux display-popup -c "$client_name" -t "$pane_id" -E -w "$popup_width" -h 11 \
   -x '#{e|+:#{popup_pane_left},#{e|/:#{e|-:#{pane_width},#{popup_width}},2}}' \
-  -y '#{e|+:#{popup_pane_top},1}' -b heavy \
-  -S "fg=yellow,bold" \
-  -T ' Edit session ' "$edit_command"
+  -y '#{e|+:#{popup_pane_top},1}' \
+  -T '#[#{@tx-accent-style}] #{@tx-mark}#[default] · edit ' "$edit_command"

@@ -142,6 +142,8 @@ impl Sink {
 
     fn handle(&self, event: &Event) -> Result<(), String> {
         let core = TxCore::open(self.config.clone()).map_err(|error| error.to_string())?;
+        let ui = Ui::from_core(&core);
+        marks::refresh_swarm(&core, &ui).map_err(|error| error.to_string())?;
         let agent = core
             .get_agent(&event.id)
             .map_err(|error| error.to_string())?;
@@ -151,7 +153,6 @@ impl Sink {
             Err(CoreError::NotRunning(_)) => return Ok(()),
             Err(error) => return Err(error.to_string()),
         };
-        let ui = Ui::from_core(&core);
         let marked = marks::read(&ui, &session);
         // Looked at, a finished turn has been seen; a question stays open until it is answered.
         let looked_at = marks::looked_at(&ui).contains(&session);
@@ -276,6 +277,12 @@ impl Verb for Attention {
                 for mark in marks::list(&ui) {
                     marks::clear(&ui, &mark.session);
                 }
+                marks::refresh_bar(&ui);
+                Ok(0)
+            }
+            ["_refresh"] => {
+                marks::refresh_bar(&ui);
+                marks::refresh_swarm(core, &ui).map_err(failed)?;
                 Ok(0)
             }
             _ => {

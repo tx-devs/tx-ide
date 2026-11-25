@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 use serde_json::Value;
-use tx_core::{Agent, CoreError, ListFilter, LlmEngineState, TxCore};
+use tx_core::{Agent, CoreError, IdleReason, ListFilter, LlmEngineState, TxCore};
 
 use crate::github::{Issue, Repository};
 
@@ -197,6 +197,8 @@ impl ColumnKind {
 pub struct CardAgent {
     pub name: String,
     pub state: LlmEngineState,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub waiting: bool,
 }
 
 impl CardAgent {
@@ -312,6 +314,8 @@ fn agents_of(issue: &Issue, agents: &[Agent]) -> Vec<CardAgent> {
         .map(|agent| CardAgent {
             name: agent.name.clone(),
             state: agent.state,
+            waiting: agent.state == LlmEngineState::Idle
+                && agent.idle_reason == Some(IdleReason::Waiting),
         })
         .collect()
 }

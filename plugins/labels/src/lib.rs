@@ -10,17 +10,14 @@ use tx_core::{
     Registry, TxCore, Verb, VerbError, VerbIo, events,
 };
 
-use tx_client::palette::WARN_HEX;
-use tx_client::render::{PickerEntry, activity_at, reltime, tag_hex};
-use tx_client::tmux::{DIM_FG_HEX, Ui, WORKING_HEX};
+use tx_client::render::{PickerEntry, activity_at, reltime};
+use tx_client::theme::{Role, active};
+use tx_client::tmux::Ui;
 
 pub const PLUGIN_ID: &str = "labels";
 
 const NAME_OPTION: &str = "@tx-name";
 const REMOTE_OPTION: &str = "@remote-session";
-const NOT_NESTED: &str = "#[fg=colour240,nobold]\u{2014}#[default]";
-/// Four middle sextants: the width of ` 1h `, so the bar fills the slot the resting age takes.
-const WORKING_BAR: &str = "\u{1FB0B}\u{1FB0B}\u{1FB0B}\u{1FB0B}";
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LabelsPlugin;
@@ -184,12 +181,17 @@ impl Verb for PaneLabel {
             return Ok(0);
         };
         let ui = Ui::from_core(core);
+        let theme = active();
         let label = if let Some(remote) = ui.pane_option(pane, REMOTE_OPTION) {
             format!("(r) {remote}")
         } else if let Some(inner) = ui.inner_for_pane(pane) {
             nested_label(core, &inner)
         } else {
-            NOT_NESTED.to_owned()
+            format!(
+                "#[{}]{}#[default]",
+                theme.tmux_fg_style(Role::Muted),
+                theme.glyphs.empty
+            )
         };
         write_out(io, &label)?;
         Ok(0)
@@ -218,44 +220,64 @@ impl Verb for LabelProgram {
     }
 }
 
-/// The record's name in bold plus a chip per tag; the raw tmux name when it has no record.
+/// A pane's header: the agent's state, its name, how long it has been in that state, its tags.
+/// The state leads, so it is found at the left of a header however wide the pane is. The raw
+/// tmux name when the session has no record.
 fn nested_label(core: &TxCore, inner: &str) -> String {
+    let theme = active();
     let session = core.resolve(inner).and_then(|id| core.get_agent(&id)).ok();
     let Some(session) = session else {
-        return format!("#[bold]{inner}#[default]");
+        return format!("#[#{{?pane_active,bold,nobold}}]{inner}#[default]");
     };
-    let mut label = format!("#[bold]{}#[default]", session.name);
+    let mut label = format!(
+        "{}#[#{{?pane_active,bold,nobold}}]{}#[default]{}",
+        state_mark(&session),
+        session.name,
+        state_age(&session, events::now())
+    );
     for tag in &session.tags {
-        label.push_str(&format!(
-            " #[fg={},#{{?pane_active,bold,nobold}}][{tag}]#[default]",
-            tag_hex(tag)
-        ));
+        label.push_str(&format!("  #[fg={}]{tag}#[default]", theme.tag_tmux(tag)));
     }
-    label.push_str(&state_mark(&session, events::now()));
     label
 }
 
-/// The border's right end: a green bar while the agent works, the age since its last activity
-/// while it rests (`0m` for the first minute), behind a `▲` when it rests on the operator (an
-/// approval, a question, a plan), nothing while it starts or after it ended.
-fn state_mark(session: &Agent, now: f64) -> String {
-    match session.state {
-        LlmEngineState::Working => {
-            format!("#[align=right]#[fg={WORKING_HEX}]{WORKING_BAR}#[default]")
+/// The state's glyph and a space: green while the agent works, the signal when it rests on the
+/// operator (an approval, a question, a plan), muted otherwise; nothing after it ended.
+fn state_mark(session: &Agent) -> String {
+    let theme = active();
+    let glyphs = theme.glyphs;
+    let (glyph, role) = match session.state {
+        LlmEngineState::Working => (glyphs.working, Role::Working),
+        LlmEngineState::Starting => (glyphs.starting, Role::Muted),
+        LlmEngineState::Idle if session.idle_reason == Some(IdleReason::Waiting) => {
+            (glyphs.needs_you, Role::Signal)
         }
-        LlmEngineState::Idle => {
-            let since = activity_at(PickerEntry::Agent(session));
-            let age = if now - since < 60.0 {
-                "0m".to_owned()
-            } else {
-                reltime(Some(since), now)
-            };
-            if session.idle_reason == Some(IdleReason::Waiting) {
-                format!("#[align=right] #[fg={WARN_HEX}]▲ {age}#[default] ")
-            } else {
-                format!("#[align=right] #[fg={DIM_FG_HEX}]{age}#[default] ")
-            }
-        }
-        LlmEngineState::Starting | LlmEngineState::Ended => String::new(),
+        LlmEngineState::Idle => (glyphs.idle, Role::Muted),
+        LlmEngineState::Ended => return String::new(),
+    };
+    format!("#[{}]{glyph}#[default] ", theme.tmux_fg_style(role))
+}
+
+/// The age since a resting agent's last activity (`0m` for the first minute), in the signal
+/// behind `needs you` when it rests on the operator; nothing while it works, starts or after
+/// it ended.
+fn state_age(session: &Agent, now: f64) -> String {
+    if session.state != LlmEngineState::Idle {
+        return String::new();
+    }
+    let theme = active();
+    let since = activity_at(PickerEntry::Agent(session));
+    let age = if now - since < 60.0 {
+        "0m".to_owned()
+    } else {
+        reltime(Some(since), now)
+    };
+    if session.idle_reason == Some(IdleReason::Waiting) {
+        format!(
+            "  #[{}]needs you {age}#[default]",
+            theme.tmux_fg_style(Role::Signal)
+        )
+    } else {
+        format!("  #[{}]{age}#[default]", theme.tmux_fg_style(Role::Muted))
     }
 }

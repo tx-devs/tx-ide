@@ -1,7 +1,8 @@
 //! The picker's vim-style normal mode and the stateful key handler behind `_picker-key` (Esc,
 //! Enter, p). Port of main's `crates/tx/src/picker_keys.rs` without the row-number digits.
 
-use tx_client::render::{ACCENT_ANSI, BOLD, RESET};
+use tx_client::render::{BOLD, RESET};
+use tx_client::theme::{Role, active};
 
 /// The pending-pick file: holds [`POPUP_MARK`] while popup mode is armed, else empty. The
 /// picker's auto-reload pauses while it is non-empty.
@@ -11,7 +12,7 @@ pub const POPUP_MARK: &str = "p";
 /// What a popup pick has fzf print ahead of the selection.
 pub const POPUP_LINE: &str = "popup";
 
-pub const NORMAL_PROMPT: &str = "  ❯ ";
+pub const NORMAL_PROMPT: &str = "  › ";
 pub const SEARCH_PROMPT: &str = "  / ";
 
 const ACTION_KEYS: [&str; 15] = [
@@ -60,19 +61,19 @@ impl Reply {
 }
 
 pub fn normal_footer(popup: bool) -> String {
+    let accent = active().ansi_fg(Role::Accent);
     if popup {
-        format!(
-            "{ACCENT_ANSI}{BOLD} POPUP{RESET}  j/k move · enter opens the row in a popup · esc back"
-        )
+        format!("{accent}{BOLD} POPUP{RESET}  j/k move · enter opens the row in a popup · esc back")
     } else {
         format!(
-            "{ACCENT_ANSI}{BOLD} NORMAL{RESET}  j/k move · enter open · p popup mode · i or / search · d kill · t tags · q quit"
+            "{accent}{BOLD} NORMAL{RESET}  j/k move · enter open · p popup mode · i or / search · d kill · t tags · q quit"
         )
     }
 }
 
 pub fn search_footer() -> String {
-    format!("{ACCENT_ANSI}{BOLD} SEARCH{RESET}  esc normal mode · enter open")
+    let accent = active().ansi_fg(Role::Accent);
+    format!("{accent}{BOLD} SEARCH{RESET}  esc normal mode · enter open")
 }
 
 fn enter_normal() -> String {
@@ -124,7 +125,7 @@ mod tests {
     #[test]
     fn esc_leaves_search_then_popup_then_closes() {
         let reply = press("esc", &SEARCH).unwrap();
-        assert!(reply.actions.starts_with("change-prompt(  ❯ )+rebind("));
+        assert!(reply.actions.starts_with("change-prompt(  › )+rebind("));
         assert!(!reply.popup);
         let reply = press("esc", &POPUP).unwrap();
         assert!(reply.actions.starts_with("change-footer:"));

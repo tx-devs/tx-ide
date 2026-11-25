@@ -657,6 +657,7 @@ mod tests {
             metadata: Default::default(),
             blurb: "hello".into(),
             state: "alive".into(),
+            waiting: false,
             sys: false,
             live: true,
             kill: None,
