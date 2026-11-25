@@ -45,7 +45,7 @@ MARKS="#{S:#{?#{m:waiting *,#{@tx-attention}},$WAITING,#{?#{m:finished *,#{@tx-a
 SEEN="if -F '#{m:finished *,#{@tx-attention}}' 'set -u @tx-attention'"
 
 cat >>"$CONF" <<EOF2
-bind Space run-shell -b "$TX attention next '#{client_name}' >/dev/null 2>&1 || true"
+bind -N "Agents waiting for you" Space run-shell -b "$TX attention next '#{client_name}' >/dev/null 2>&1 || true"
 set -g status-left-length 80
 set -g status-left "$MARKS"
 set-hook -g pane-focus-in "$SEEN"

@@ -22,7 +22,7 @@ CONF=$(mktemp -t tx-assistant-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind '/' command-prompt -p "tx-assistant>" {
+bind -N "Ask the tx assistant" '/' command-prompt -p "tx-assistant>" {
   set-buffer -b tx-assistant-input "%%"
   run-shell -b "$TX assistant ask --from-buffer --pane '#{pane_id}'"
 }

@@ -80,8 +80,8 @@ bind -n C-$key if -F '$nav_pass' {
 EOF2
   # Q24: tmux reports a disabled prefix as `None`; compare case-insensitively (bash 3.2: no ${,,}).
   if [ "$(printf %s "$nav_prefix" | tr '[:upper:]' '[:lower:]')" != none ]; then
-    printf "bind C-%s if -F '%s' 'send-keys %s C-%s' 'send-keys C-%s'\n" \
-      "$key" "$nav_nested" "$nav_prefix" "$key" "$key" >>"$CONF"
+    printf "bind -N 'Send C-%s to the program' C-%s if -F '%s' 'send-keys %s C-%s' 'send-keys C-%s'\n" \
+      "$key" "$key" "$nav_nested" "$nav_prefix" "$key" "$key" >>"$CONF"
   fi
 done <<'NAVSPEC'
 h L pane_at_left

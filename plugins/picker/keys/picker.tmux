@@ -24,7 +24,7 @@ CONF=$(mktemp -t tx-picker-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind t display-popup -E -w 118 -h 30 -x C -y 1 -T " tx " "$TX pick"
+bind -N "Find an agent or view" t display-popup -E -w 118 -h 30 -x C -y 1 -T " tx " "$TX pick"
 EOF2
 
 tmux source-file "$CONF"

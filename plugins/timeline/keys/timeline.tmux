@@ -21,7 +21,7 @@ CONF=$(mktemp -t tx-timeline-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind T run-shell -b "$TX _timeline-open '#{pane_id}' '#{client_name}' >/dev/null 2>&1 || true"
+bind -N "Activity timeline" T run-shell -b "$TX _timeline-open '#{pane_id}' '#{client_name}' >/dev/null 2>&1 || true"
 EOF2
 
 tmux source-file "$CONF"

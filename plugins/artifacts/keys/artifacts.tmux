@@ -22,7 +22,7 @@ CONF=$(mktemp -t tx-artifacts-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind a if -F '#{==:#{pane_current_command},tmux}' {
+bind -N "Artifacts of this session" a if -F '#{==:#{pane_current_command},tmux}' {
   send-keys $menu_prefix a
 } {
   run-shell -b "$DATA/bin/tmux-artifact-menu '#{session_name}' '#{client_name}'"
