@@ -1,0 +1,20 @@
+[package]
+name = "tx-keymap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "tx-core plugin: prefix+?, a keyboard of the prefix shortcuts, coloured by who owns each key."
+
+# The plugin as its own program: what `plugin.yaml` names for its verbs.
+[[bin]]
+name = "tx-keymap"
+path = "src/main.rs"
+
+[dependencies]
+tx-core.workspace = true
+tx-client.workspace = true
+ratatui = "0.30"
+
+[lints]
+workspace = true

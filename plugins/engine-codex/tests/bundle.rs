@@ -30,6 +30,9 @@ fn the_manifest_says_what_the_adapter_answers() {
     .unwrap();
     // Codex adds nothing to every agent; `tx harness ls` prints the manifest's notes.
     assert_eq!(engine.notes, adapter.notes());
+    // The new-agent form offers the manifest's models and efforts.
+    assert_eq!(engine.models, adapter.models());
+    assert_eq!(engine.efforts, adapter.efforts());
     assert_eq!(
         engine.methods,
         [

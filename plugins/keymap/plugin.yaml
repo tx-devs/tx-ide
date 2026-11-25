@@ -1,0 +1,14 @@
+api: 1
+id: keymap
+description: Prefix+?, a keyboard of the prefix shortcuts, coloured by who owns each key.
+tier: ide
+requires: [ide]
+
+verbs:
+  - name: keymap
+    usage: "keymap   a keyboard of the prefix shortcuts: tx, tmux or free; press a key to see what it does (prefix+?)"
+    bin: tx-keymap
+    args: [keymap]
+
+resources:
+  - keys/keymap.tmux

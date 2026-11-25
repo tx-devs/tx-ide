@@ -1235,7 +1235,11 @@ impl Theme {
             name = self.name,
             truecolor = self.text.rgb.is_some() || self.accent.rgb.is_some(),
             text = attributes(Role::Text, "fg"),
-            muted = attributes(Role::Muted, "fg"),
+            // nvim has no dim attribute: quiet text without a colour takes the terminal's grey.
+            muted = match attributes(Role::Muted, "fg").as_str() {
+                "nil" if self.depth != ColorDepth::None => "{ ctermfg = 8 }".to_owned(),
+                attributes => attributes.to_owned(),
+            },
             rule = attributes(Role::Rule, "fg"),
             accent = attributes(Role::Accent, "fg"),
             signal = attributes(Role::Signal, "fg"),

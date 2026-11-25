@@ -520,6 +520,18 @@ pub trait LlmEngine: Send + Sync {
         Vec::new()
     }
 
+    /// The models the new-agent form offers, the one the CLI runs without a `model` option
+    /// first. Pure. The default offers none.
+    fn models(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// The `effort` values the new-agent form offers. Pure. The default offers none: the engine
+    /// has no effort.
+    fn efforts(&self) -> Vec<String> {
+        Vec::new()
+    }
+
     /// What this engine would do with the agents that the agents' files do not let one
     /// expect, printed as warnings by `tx harness check` and `tx create --agent`. The default warns of
     /// nothing.

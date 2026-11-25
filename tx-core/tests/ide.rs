@@ -52,6 +52,7 @@ fn expected_conf(cli: &Cli) -> String {
          run-shell \"/usr/bin/env bash {state}/keys/edit.tmux\"\n\
          run-shell \"/usr/bin/env bash {state}/keys/graph.tmux\"\n\
          run-shell \"/usr/bin/env bash {state}/keys/home.tmux\"\n\
+         run-shell \"/usr/bin/env bash {state}/keys/keymap.tmux\"\n\
          run-shell \"/usr/bin/env bash {state}/keys/kill.tmux\"\n\
          run-shell \"/usr/bin/env bash {state}/keys/labels.tmux\"\n\
          run-shell \"/usr/bin/env bash {state}/keys/picker.tmux\"\n\
@@ -267,6 +268,7 @@ fn update_materialises_resources() {
         ("home", "keys=m"),
         ("board", "keys=b"),
         ("switch", "keys=P"),
+        ("keymap", "keys=?"),
         ("attention", "keys=Space"),
     ] {
         assert!(

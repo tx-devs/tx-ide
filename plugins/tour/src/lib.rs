@@ -314,12 +314,13 @@ fn lua_string(s: &str) -> String {
 
 /// nvim's arguments for a tour. tx-client appends its own `-c` that puts the runtime holding
 /// `tx-tour` on the runtimepath, after these; so the tour loads on `VimEnter`, which fires once
-/// every `-c` has run.
+/// every `-c` has run. `++nested` lets the buffers the tour loads fire their own autocommands
+/// (filetype detection, hence syntax and treesitter); without it autocommands do not nest.
 pub fn nvim_arguments(stops: &Path) -> Vec<String> {
     vec![
         "-c".to_owned(),
         format!(
-            "autocmd VimEnter * ++once lua require('tx-tour')({})",
+            "autocmd VimEnter * ++once ++nested lua require('tx-tour')({})",
             lua_string(&stops.to_string_lossy())
         ),
     ]
@@ -457,7 +458,7 @@ mod tests {
             nvim_arguments(Path::new("/d/it's\\a/current.lua")),
             [
                 "-c",
-                "autocmd VimEnter * ++once lua require('tx-tour')('/d/it\\'s\\\\a/current.lua')"
+                "autocmd VimEnter * ++once ++nested lua require('tx-tour')('/d/it\\'s\\\\a/current.lua')"
             ]
         );
     }
@@ -468,6 +469,58 @@ mod tests {
             .stdout(Stdio::null())
             .status()
             .is_ok_and(|status| status.success())
+    }
+
+    #[test]
+    fn a_spawned_tour_detects_the_filetype_of_its_buffers() {
+        if !nvim_available() {
+            eprintln!("nvim not available; skipping");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let shown = dir.path().join("shown.rs");
+        let loaded = dir.path().join("loaded.py");
+        std::fs::write(&shown, "fn main() {}\n").unwrap();
+        std::fs::write(&loaded, "x = 1\n").unwrap();
+        let stops = dir.path().join("stops.lua");
+        let stop = |file: &Path| {
+            format!(
+                "{{ file = {}, line = 1, label = 'l', message = 'm', severity = 'INFO' }}",
+                lua_string(&file.to_string_lossy())
+            )
+        };
+        std::fs::write(
+            &stops,
+            format!("return {{ {}, {} }}\n", stop(&shown), stop(&loaded)),
+        )
+        .unwrap();
+        let runtime = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ide/nvim");
+        // Reads the files from the stops, not nvim's arguments: a file nvim opens at startup is
+        // detected outside any autocommand and would pass without `++nested`.
+        let report = format!(
+            "autocmd VimEnter * lua \
+            for _, stop in ipairs(dofile({})) do \
+              io.stdout:write(vim.bo[vim.fn.bufnr(stop.file)].filetype, '\\n') \
+            end \
+            vim.cmd('qa!')",
+            lua_string(&stops.to_string_lossy())
+        );
+
+        let output = Command::new("nvim")
+            .args(["--clean", "--headless"])
+            .args(nvim_arguments(&stops))
+            .arg("-c")
+            .arg(format!("set rtp^={}", runtime.display()))
+            .args(["-c", &report])
+            .output()
+            .unwrap();
+
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "rust\npython\n",
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[test]

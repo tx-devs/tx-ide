@@ -37,7 +37,7 @@ trap 'rm -f "$CONF"' EXIT
 REFRESH="run-shell -b \"$TX attention _refresh >/dev/null 2>&1 || true\""
 
 cat >>"$CONF" <<EOF2
-bind Space run-shell -b "$TX attention next '#{client_name}' >/dev/null 2>&1 || true"
+bind -N "Agents waiting for you" Space run-shell -b "$TX attention next '#{client_name}' >/dev/null 2>&1 || true"
 set -g status-left-length 80
 set -g status-left "#[#{@tx-chip-style}] #{@tx-mark} #[default]#{E:@tx-attention-bar}"
 set-hook -g pane-focus-in {

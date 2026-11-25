@@ -141,6 +141,10 @@ pub struct ManifestEngine {
     pub interrupt: Option<ManifestInterrupt>,
     /// Printed by `tx harness ls` and `tx harness check`.
     pub notes: Vec<String>,
+    /// The models the new-agent form offers, the one the CLI runs without `--model` first.
+    pub models: Vec<String>,
+    /// The `effort` values the new-agent form offers; none: the engine has no effort.
+    pub efforts: Vec<String>,
 }
 
 /// The `engine` section as it is written: `ext_key` may be left out.
@@ -160,6 +164,10 @@ struct EngineKeys {
     interrupt: Option<ManifestInterrupt>,
     #[serde(default)]
     notes: Vec<String>,
+    #[serde(default)]
+    models: Vec<String>,
+    #[serde(default)]
+    efforts: Vec<String>,
 }
 
 impl From<EngineKeys> for ManifestEngine {
@@ -173,6 +181,8 @@ impl From<EngineKeys> for ManifestEngine {
             methods: keys.methods,
             interrupt: keys.interrupt,
             notes: keys.notes,
+            models: keys.models,
+            efforts: keys.efforts,
         }
     }
 }
@@ -550,6 +560,8 @@ engine:
   methods: [prepare, archive, restore, receive_message]
   interrupt: { key: Escape, state: idle }
   notes: [\"claude adds to every agent's tools: Skill, ToolSearch\"]
+  models: [fable, opus]
+  efforts: [low, high]
 on-event:
   events: [state-changed, message-sent]
   bin: notify
@@ -624,6 +636,8 @@ resources:
             })
         );
         assert_eq!(engine.notes.len(), 1);
+        assert_eq!(engine.models, ["fable", "opus"]);
+        assert_eq!(engine.efforts, ["low", "high"]);
         let on_event = manifest.on_event.as_ref().unwrap();
         assert_eq!(
             on_event.events,
@@ -670,6 +684,7 @@ resources:
         let engine = manifest.engine.unwrap();
         assert_eq!(engine.ext_key, "fake-data");
         assert!(engine.args.is_empty() && engine.methods.is_empty() && engine.notes.is_empty());
+        assert!(engine.models.is_empty() && engine.efforts.is_empty());
         assert_eq!(engine.hook, None);
         assert_eq!(engine.interrupt, None);
     }

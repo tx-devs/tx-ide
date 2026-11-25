@@ -15,7 +15,7 @@ CONF=$(mktemp -t tx-edit-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind e run-shell -b "$DATA/bin/tmux-edit-tx-session '#{pane_id}' '#{client_name}'"
+bind -N "Rename or retag this agent" e run-shell -b "$DATA/bin/tmux-edit-tx-session '#{pane_id}' '#{client_name}'"
 EOF2
 
 tmux source-file "$CONF"

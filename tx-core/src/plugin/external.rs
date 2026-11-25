@@ -305,8 +305,8 @@ impl Running {
 /// for every later call: one request line in, one response line out. It ends when the proxy is
 /// dropped: its input is closed, it has a second to exit, then it is killed. A method the
 /// manifest does not list is answered here as the trait's default answers it, without the
-/// program; so is `interrupt` when the manifest gives the fixed answer, `notes` always (the
-/// manifest's), and `conversation` always (the two reserved keys of the engine's data).
+/// program; so is `interrupt` when the manifest gives the fixed answer, `notes`, `models` and
+/// `efforts` always (the manifest's), and `conversation` always (the two reserved keys of the engine's data).
 ///
 /// An exchange that breaks (the program cannot start, ends without answering, or says
 /// something that is not a response) is `EngineError::Refused("engine <kind>: <what
@@ -323,6 +323,9 @@ pub struct ProcessEngine {
     /// What the engine adds to every agent: the manifest's `notes`, answered without the
     /// program.
     notes: Vec<String>,
+    /// What the new-agent form offers: the manifest's `models` and `efforts`.
+    models: Vec<String>,
+    efforts: Vec<String>,
     /// The engine's own hook entry, `[<plugin>/bin/<hook.bin>, hook.args…]`, sent in every
     /// launch request instead of core's; `None`: the engine has none, and core's stands.
     hook_command: Option<Vec<String>>,
@@ -344,6 +347,8 @@ impl ProcessEngine {
             methods: engine.methods.clone(),
             interrupt: engine.interrupt.clone(),
             notes: engine.notes.clone(),
+            models: engine.models.clone(),
+            efforts: engine.efforts.clone(),
             hook_command: engine.hook.as_ref().map(|hook| {
                 std::iter::once(launcher.program(&hook.bin).to_string_lossy().into_owned())
                     .chain(hook.args.iter().cloned())
@@ -594,6 +599,14 @@ impl LlmEngine for ProcessEngine {
         self.notes.clone()
     }
 
+    fn models(&self) -> Vec<String> {
+        self.models.clone()
+    }
+
+    fn efforts(&self) -> Vec<String> {
+        self.efforts.clone()
+    }
+
     fn warnings(&self, request: &DefinitionsRequest<'_>) -> Vec<Finding> {
         if !self.implements(EngineMethod::Warnings) {
             return Vec::new();
@@ -806,6 +819,8 @@ done"#;
                 methods: methods.to_vec(),
                 interrupt: None,
                 notes: Vec::new(),
+                models: Vec::new(),
+                efforts: Vec::new(),
             }
         }
 
@@ -1261,7 +1276,8 @@ done"##;
     }
 
     #[test]
-    fn what_an_engine_adds_is_asked_only_when_listed_and_its_notes_come_from_the_manifest() {
+    fn what_an_engine_adds_is_asked_only_when_listed_and_its_notes_and_models_come_from_the_manifest()
+     {
         let fixture = Fixture::new(REPORTING);
         let (agents, skills) = definitions();
         let servers = BTreeMap::new();
@@ -1277,9 +1293,13 @@ done"##;
 
         let quiet = fixture.engine(&ManifestEngine {
             notes: vec!["fake adds Skill".to_owned()],
+            models: vec!["big".to_owned(), "small".to_owned()],
+            efforts: vec!["low".to_owned()],
             ..Fixture::section(&[])
         });
         assert_eq!(quiet.notes(), ["fake adds Skill"]);
+        assert_eq!(quiet.models(), ["big", "small"]);
+        assert_eq!(quiet.efforts(), ["low"]);
         assert_eq!(quiet.warnings(&request), []);
         assert_eq!(quiet.check(&request).unwrap(), EngineCheck::default());
         assert_eq!(quiet.tools(&tools).unwrap(), EngineTools::default());

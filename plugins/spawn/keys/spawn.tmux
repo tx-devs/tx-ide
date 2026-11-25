@@ -16,7 +16,7 @@ CONF=$(mktemp -t tx-spawn-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind n run-shell -b "$DATA/bin/tmux-new-agent '#{pane_id}' '#{client_name}'"
+bind -N "New agent" n run-shell -b "$DATA/bin/tmux-new-agent '#{pane_id}' '#{client_name}'"
 EOF2
 
 tmux source-file "$CONF"

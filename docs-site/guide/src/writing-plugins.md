@@ -162,6 +162,8 @@ engine:                      # at most one
   methods: [prepare, archive, restore]   # the optional methods it implements
   interrupt: { key: Escape, state: idle }               # optional: a fixed answer to `interrupt`
   notes: ["claude adds to every agent's tools: Skill, ToolSearch"]
+  models: [fable, opus, sonnet, haiku]    # optional: what prefix+n offers, the CLI's default first
+  efforts: [low, medium, high, xhigh, max]   # optional: none means the engine has no effort
 
 on-event:                    # at most one
   events: [state-changed, message-sent]   # event type names, or `all`
@@ -533,6 +535,11 @@ agent, skill and MCP definitions, in kind order. An engine that says nothing add
 - `notes` (a manifest key, a list of lines): what the engine adds to every agent, printed as
   `# <note>` under the agents of `tx harness ls` and at the top of `tx harness check`. tx reads them from
   the manifest and never starts the program for them.
+- `models` and `efforts` (manifest keys, lists of names): what the new-agent form (prefix+n)
+  offers for the engine. The first model is the one the CLI runs without a `model` option: the
+  form preselects it and passes no `model` when it is picked. The form preselects `high` when it
+  is among the efforts, else the first. A list left out offers `default` alone, which passes no
+  option. tx reads them from the manifest and never starts the program for them.
 - `warnings`: what the engine would do with an agent that its file does not let one expect.
   Params: `agents`, the agent definitions as `{"name", "path", "tools", "disallowed_tools",
   "skills", "lines": {<key>: <line>}}` (no prompt; `lines` is where each frontmatter key

@@ -51,6 +51,21 @@ pub const BORDER_DIM: Color = Color::Rgb(59, 66, 97);
 pub const BG_DEEP: Color = Color::Rgb(21, 22, 30);
 pub const BG_DEEP_HEX: &str = "#15161e";
 
+/// The page behind a full-screen surface (Tokyo Night `bg`).
+pub const BACKGROUND: Color = Color::Rgb(26, 27, 38);
+
+/// Tokyo Night's surface greys, darkest to lightest: a sunken tile (`bg_dark`), a tile
+/// (`bg` of the storm variant), and a raised tile (`terminal_black`).
+pub const SURFACE_SUNKEN: Color = Color::Rgb(31, 35, 53);
+pub const SURFACE: Color = Color::Rgb(36, 40, 59);
+pub const SURFACE_RAISED: Color = Color::Rgb(65, 72, 104);
+
+/// Hints and other quiet text (Tokyo Night `comment`).
+pub const COMMENT: Color = Color::Rgb(86, 95, 137);
+
+/// Readable but receding text on a tile (Tokyo Night `dark5`).
+pub const SUBTLE_FG: Color = Color::Rgb(115, 122, 162);
+
 /// `color`, or its 256-colour palette entry when `TX_HOME_COLORS=256`.
 pub fn palette(color: Color) -> Color {
     static INDEXED: OnceLock<bool> = OnceLock::new();

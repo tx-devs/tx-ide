@@ -54,6 +54,9 @@ use tx_core::{
 pub const CODEX_BIN: &str = "codex";
 pub const SKILLS_DIR: &str = ".agents/skills";
 pub const MODEL_FLAG: &str = "-m";
+/// The models the new-agent form offers, the one `codex` runs without `-m` first; the manifest
+/// says the same.
+pub const MODELS: [&str; 4] = ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"];
 pub const RESUME_SUBCOMMAND: &str = "resume";
 pub const FORK_SUBCOMMAND: &str = "fork";
 /// Answers the "Working directory · fork" prompt `codex fork` shows when the current directory
@@ -481,6 +484,16 @@ impl LlmEngine for CodexAdapter {
     /// agent is at its prompt afterwards.
     fn interrupt(&self, _: &Agent) -> Option<(Input, Option<LlmEngineState>)> {
         Some((Input::Key(Key::Escape), Some(LlmEngineState::Idle)))
+    }
+
+    fn models(&self) -> Vec<String> {
+        MODELS.map(str::to_owned).to_vec()
+    }
+
+    fn efforts(&self) -> Vec<String> {
+        Effort::ALL
+            .map(|effort| effort.as_str().to_owned())
+            .to_vec()
     }
 
     /// A turn stops on the operator (`Idle`, waiting) at an approval (`PermissionRequest`,
