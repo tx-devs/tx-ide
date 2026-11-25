@@ -22,6 +22,7 @@ tier `ide`, and `full`, the default, adds tier `extra`.
 | `attention` | ide | `tx-attention` |
 | `board` | ide | `tx-board` |
 | `switch` | ide | `tx-switch` |
+| `keymap` | ide | `tx-keymap` |
 | `edit` | ide | `tx-edit` |
 | `graph` | ide | `tx-graph` |
 | `home` | ide | `tx-home` |
@@ -256,6 +257,15 @@ it, and `r` retries. Its verbs run as the program `tx-board`
 file's comments and layout, then runs `tx update`, which publishes or retires the plugin.
 `switch` alone lists the plugins: space flips one, Enter applies, q cancels. prefix+P opens it
 in a popup. Tier `ide` (it requires `ide`); its program is `tx-switch`.
+
+**`keymap`**: prefix+? draws a keyboard of the prefix shortcuts in a popup, at the picker's size
+and place. A key is blue when a tx plugin binds it (the owners come from `<data>/keys/.installed`),
+grey when tmux or the user's own tmux.conf does, and dark when it is free; in the base mode a dot
+says the shifted key is bound too. Pressing a key, or clicking it, shows how to press it after
+the prefix, its description (the bind's `-N` note, else its command) and its owner. Tab switches
+the mode (base, shift, control, option), Shift-Tab the keyboard (mac, windows), which renames the
+modifiers and the keystrokes; Esc closes it. A plugin describes its keys by binding them with
+`bind -N "<what it does>"`. Tier `ide` (it requires `ide`); its program is `tx-keymap`.
 
 **`attention`**: the agents that need you. An agent is marked when it stops on you (an approval,
 a question, a plan to accept), and when it finishes a turn it worked on and you started it: it has
