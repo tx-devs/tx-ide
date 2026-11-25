@@ -37,7 +37,7 @@ return function(stops_path)
 
   vim.diagnostic.config({
     virtual_text = {
-      prefix = "▶",
+      prefix = "▸",
       spacing = 2,
       format = function(diagnostic)
         return diagnostic.user_data.tour_label

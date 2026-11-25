@@ -639,7 +639,7 @@ fn render_status(pack: &Pack, progress: &Progress, current: usize) -> String {
         .enumerate()
         .map(|(index, lesson)| {
             let marker = if index == current {
-                "▶"
+                "▸"
             } else if progress.is_passed(&lesson.id) {
                 "✓"
             } else {
