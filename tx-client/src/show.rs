@@ -126,7 +126,8 @@ impl Ui {
         let theme = active();
         let text = theme.tmux_color(Role::Text);
         let muted = theme.tmux_color(Role::Muted);
-        let footer = format!(" #[fg={text}]{prefix} d#[fg={muted}] close, the session keeps running");
+        let footer =
+            format!(" #[fg={text}]{prefix} d#[fg={muted}] close, the session keeps running");
         let target = format!("={session}:");
         let shown = format!("={session}");
         let options = [

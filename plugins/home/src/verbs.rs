@@ -439,9 +439,10 @@ fn open(core: &TxCore, ui: &Ui, pane: &str, client: &str) -> Result<i32, VerbErr
     let command = tx.shell(&[TUI_VERB, pane, "--popup", "--choice", &choice_path]);
     // -EE: a home that fails keeps its popup open, showing why.
     let theme = tx_client::theme::active();
-    let title = theme
-        .glyphs
-        .inset_title(&format!("{} home", theme.glyphs.mark));
+    let title = theme.glyphs.inset_title(
+        tx_client::theme::BorderRole::Frame,
+        &format!("{} home", theme.glyphs.mark),
+    );
     ui.run(&[
         "display-popup",
         "-c",
@@ -498,7 +499,12 @@ struct Popup<'a> {
 
 fn popup(ui: &Ui, client: &str, spec: &Popup<'_>, command: &str) {
     let theme = tx_client::theme::active();
-    let inset_title = theme.glyphs.inset_title(spec.title);
+    let border_role = if spec.form {
+        tx_client::theme::BorderRole::Operator
+    } else {
+        tx_client::theme::BorderRole::Frame
+    };
+    let inset_title = theme.glyphs.inset_title(border_role, spec.title);
     let mut args = vec![
         "display-popup",
         "-c",

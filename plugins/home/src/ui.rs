@@ -11,7 +11,7 @@ use ratatui::widgets::{Block, Widget};
 use tx_client::render::reltime;
 use tx_core::LlmEngineState;
 
-use tx_client::theme::{Role, active};
+use tx_client::theme::{BorderRole, Role, active};
 
 use crate::backdrop::{Backdrop, is_text, layout};
 use crate::model::{AgentRow, AssistantState, Context, Detail, Home, Row, View};
@@ -171,14 +171,11 @@ fn header_line(home: &Home, width: usize) -> Line<'static> {
             role(Role::Signal),
         ),
         AssistantState::Ready => (format!("{} ready", glyphs.working), role(Role::Working)),
-        AssistantState::Stopped { .. } => {
-            (format!("{} stopped · r restart", glyphs.idle), dim())
-        }
+        AssistantState::Stopped { .. } => (format!("{} stopped · r restart", glyphs.idle), dim()),
         AssistantState::Failed(reason) => {
             let prefix = format!("{} failed: ", glyphs.failed);
-            let used = glyphs.mark.chars().count()
-                + counts.chars().count()
-                + prefix.chars().count();
+            let used =
+                glyphs.mark.chars().count() + counts.chars().count() + prefix.chars().count();
             let reason = truncate(reason, width.saturating_sub(used));
             (format!("{prefix}{reason}"), role(Role::Failed))
         }
@@ -220,7 +217,9 @@ fn agent_line(agent: &AgentRow, now: f64, frame: usize) -> Line<'static> {
             "starting",
             role(Role::Muted),
         ),
-        LlmEngineState::Idle if agent.waiting => (glyphs.needs_you, "needs you", role(Role::Signal)),
+        LlmEngineState::Idle if agent.waiting => {
+            (glyphs.needs_you, "needs you", role(Role::Signal))
+        }
         LlmEngineState::Idle => (glyphs.idle, "idle", dim()),
         LlmEngineState::Ended => (glyphs.ended, "ended", dim()),
     };
@@ -388,7 +387,7 @@ fn draw_list(list: &List<'_>, area: Rect, buf: &mut Buffer, themed: bool) {
     let (row, highlight) = (*row, *highlight);
     let theme = active();
     let block = Block::bordered()
-        .title(theme.glyphs.inset_title(title))
+        .title(theme.glyphs.inset_title(BorderRole::Content, title))
         .border_style(role(Role::Accent));
     let inner = block.inner(area);
     block.render(area, buf);

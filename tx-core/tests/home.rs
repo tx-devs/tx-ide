@@ -24,10 +24,12 @@ fn press(cli: &Cli, keys: &[&str]) {
     assert!(outer(cli, &args).status.success());
 }
 
-/// What the outer terminal shows: the IDE's client, with any popup drawn over it.
+/// What the outer terminal shows: the IDE's client, with any popup drawn over it. A backdrop's
+/// half-blocks read as blanks: it may paint one in the gap between two words of the home's text,
+/// and which gap depends on the column and the moment.
 fn screen(cli: &Cli) -> String {
     String::from_utf8_lossy(&outer(cli, &["capture-pane", "-p", "-t", "=outer:"]).stdout)
-        .into_owned()
+        .replace('▀', " ")
 }
 
 fn clients(cli: &Cli) -> Vec<String> {
@@ -213,7 +215,7 @@ fn home_shown(cli: &Cli) -> bool {
         .lines()
         .filter(|line| !line.trim().is_empty())
         .collect();
-    lines.first().is_some_and(|line| line.contains("tx-ide"))
+    lines.first().is_some_and(|line| line.contains("╋╳"))
         && lines
             .last()
             .is_some_and(|line| line.contains("enter attach") || line.contains("enter resume"))
@@ -392,7 +394,7 @@ fn home_install_turns_a_shell_home_into_the_tui() {
     );
     assert_eq!(
         cli.tmux_out(&["show-options", "-pv", "-t", &pane, "remain-on-exit-format"]),
-        "tx home: working…"
+        "╋╳ home · working…"
     );
     // A second install leaves the running TUI alone.
     let pid = cli.tmux_out(&["display-message", "-p", "-t", "=home:", "#{pane_pid}"]);
@@ -586,7 +588,12 @@ fn the_first_open_warms_the_assistant_once_and_the_header_follows() {
         screen(&cli)
     );
     assert!(
-        cli.wait_for(10, || screen(&cli).contains("assistant ◐ starting")),
+        cli.wait_for(10, || {
+            let text = screen(&cli);
+            ["▖", "▘", "▝", "▗"]
+                .iter()
+                .any(|glyph| text.contains(&format!("assistant {glyph} starting")))
+        }),
         "{}",
         screen(&cli)
     );
@@ -628,8 +635,12 @@ fn ask_nests_into_the_assistant_at_once() {
     install_home_with_path(&cli, &path);
     attach_home(&cli);
     assert!(
-        cli.wait_for(30, || screen(&cli)
-            .contains("assistant ◐ starting · claude")),
+        cli.wait_for(30, || {
+            let text = screen(&cli);
+            ["▖", "▘", "▝", "▗"]
+                .iter()
+                .any(|glyph| text.contains(&format!("assistant {glyph} starting · claude")))
+        }),
         "{}",
         screen(&cli)
     );

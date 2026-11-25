@@ -302,25 +302,22 @@ fn published_fragments(data: &Path) -> Result<Vec<(String, String)>, VerbError> 
     Ok(fragments)
 }
 
-/// Detects the active terminal background polarity from any attached tmux client.
-fn detect_server_polarity(ui: &Ui) -> Polarity {
-    let (ok, output) = ui.quiet(&["list-clients", "-F", "#{client_theme}"]);
-    if !ok {
-        return Polarity::Unknown;
-    }
-    for line in output.lines() {
-        let polarity = Polarity::parse(line);
-        if polarity != Polarity::Unknown {
-            return polarity;
-        }
-    }
-    Polarity::Unknown
+/// The terminal background an attached client reports, else the one recorded the last time a
+/// terminal answered (`tx update` before the first attach, a server with no client).
+fn known_polarity(ui: &Ui, data: &Path) -> Polarity {
+    ui.quiet(&["list-clients", "-F", "#{client_theme}"])
+        .1
+        .lines()
+        .map(Polarity::parse)
+        .find(|polarity| *polarity != Polarity::Unknown)
+        .unwrap_or_else(|| Polarity::recorded(data))
 }
 
 /// Generates `<data>/conf/theme.tmux` and `<data>/conf/theme.lua` from the active configuration.
 fn write_theme_files(core: &TxCore, polarity: Polarity) -> Result<PathBuf, VerbError> {
     let depth = ColorDepth::detect();
-    let theme = Theme::for_core(core, polarity, depth);
+    let theme = Theme::for_core(core, polarity, depth)
+        .map_err(|error| VerbError::Failed(error.to_string()))?;
     let conf_dir = core.config().directories.data.join("conf");
     std::fs::create_dir_all(&conf_dir).map_err(io_failed(&conf_dir))?;
     let tmux_path = conf_dir.join("theme.tmux");
@@ -331,7 +328,8 @@ fn write_theme_files(core: &TxCore, polarity: Polarity) -> Result<PathBuf, VerbE
 }
 
 /// `_theme-apply [dark|light]`: regenerates `<data>/conf/theme.tmux` and `theme.lua`, and sources
-/// `theme.tmux` on the running server (invoked by `client-dark-theme` / `client-light-theme`).
+/// `theme.tmux` on the running server. tmux's `client-dark-theme` / `client-light-theme` hooks run
+/// it with the background the terminal reported, which it records for the screens started later.
 pub struct ThemeApplyVerb;
 
 impl Verb for ThemeApplyVerb {
@@ -345,12 +343,16 @@ impl Verb for ThemeApplyVerb {
 
     fn run(&self, core: &TxCore, io: &mut VerbIo<'_>, argv: &[String]) -> Result<i32, VerbError> {
         let ui = Ui::from_core(core);
-        let polarity = match argv.first().map(String::as_str) {
-            Some("dark") => Polarity::Dark,
-            Some("light") => Polarity::Light,
-            None => detect_server_polarity(&ui),
-            Some(other) => {
-                let _ = writeln!(io.stderr, "usage: tx _theme-apply [dark|light] (got {other})");
+        let data = &core.config().directories.data;
+        let polarity = match argv {
+            [] => known_polarity(&ui, data),
+            [reported] if reported == "dark" || reported == "light" => {
+                let polarity = Polarity::parse(reported);
+                polarity.record(data).map_err(io_failed(data))?;
+                polarity
+            }
+            _ => {
+                let _ = writeln!(io.stderr, "usage: tx {}", self.usage());
                 return Ok(2);
             }
         };
@@ -494,12 +496,7 @@ fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
     let conf = core.config().tmux_conf_path();
     let ui = Ui::from_core(core);
     let server_running = ui.quiet(&["list-sessions"]).0;
-    let polarity = if server_running {
-        detect_server_polarity(&ui)
-    } else {
-        Polarity::Unknown
-    };
-    write_theme_files(core, polarity)?;
+    write_theme_files(core, known_polarity(&ui, data))?;
     std::fs::write(&conf, conf_text(&exe, data, &arguments, &run_order))
         .map_err(io_failed(&conf))?;
     let installed = data.join(KEYS_INSTALLED);

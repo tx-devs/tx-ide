@@ -68,7 +68,7 @@ fn pane_label_dash_when_nothing_nested() {
     let pane = pane_id_of(&cli, "a");
     assert_eq!(
         cli.ok(&["_pane-label", &pane, "0"]),
-        "#[fg=colour240,nobold]\u{2014}#[default]"
+        "#[fg=default,dim]\u{2014}#[default] \u{2523}"
     );
 }
 
@@ -137,7 +137,7 @@ fn pane_label_shows_nested_session() {
         assert!(output.status.success(), "{event}: {output:?}");
     }
     let label = cli.ok(&["_pane-label", &pane]);
-    assert!(label.contains("#[fg=#e0af68]▲ 0m#[default]"), "{label:?}");
+    assert!(label.contains("▲ 0m#[default]"), "{label:?}");
     cli.ok(&["stop", "outer"]);
 }
 

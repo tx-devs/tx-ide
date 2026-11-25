@@ -29,20 +29,10 @@ pub const MARK_CELL_UNICODE: &str = "╋";
 pub const MARK_CELL_ASCII: &str = "t";
 
 /// Four-row box-drawn Junction `tx` banner (9×4, fits `home-backdrop`'s <= 7×48 contract).
-pub const BANNER_UNICODE: &[&str] = &[
-    " ╻       ",
-    "━╋━━  ╲ ╱",
-    " ┃     ╳ ",
-    " ┗━━  ╱ ╲",
-];
+pub const BANNER_UNICODE: &[&str] = &[" ╻       ", "━╋━━  ╲ ╱", " ┃     ╳ ", " ┗━━  ╱ ╲"];
 
 /// Four-row ASCII fallback banner (9×4).
-pub const BANNER_ASCII: &[&str] = &[
-    " |       ",
-    "-+--  \\ /",
-    " |     X ",
-    " +--  / \\",
-];
+pub const BANNER_ASCII: &[&str] = &[" |       ", "-+--  \\ /", " |     X ", " +--  / \\"];
 
 /// Terminal background polarity, reported by tmux's `#{client_theme}` or overridden by config.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,7 +50,32 @@ impl Polarity {
             _ => Self::Unknown,
         }
     }
+
+    /// The background the terminal last reported, as `tx _theme-apply dark|light` recorded it
+    /// under `data_dir`; `Unknown` before any terminal has answered.
+    pub fn recorded(data_dir: &Path) -> Self {
+        std::fs::read_to_string(data_dir.join(POLARITY_FILE))
+            .map_or(Self::Unknown, |text| Self::parse(&text))
+    }
+
+    /// Records a known background under `data_dir` for the screens started after this.
+    pub fn record(self, data_dir: &Path) -> std::io::Result<()> {
+        let name = match self {
+            Self::Dark => "dark",
+            Self::Light => "light",
+            Self::Unknown => return Ok(()),
+        };
+        let path = data_dir.join(POLARITY_FILE);
+        std::fs::create_dir_all(path.parent().expect("the file is under plugins/ide"))?;
+        std::fs::write(path, name)
+    }
 }
+
+/// Where the terminal's last reported background is kept, relative to the data directory. tmux
+/// knows it only once a client has attached and its terminal has answered; a screen that starts
+/// before that, or outside tmux, reads it from here. It is the `ide` plugin's own data: `tx update`
+/// prunes `<data>/conf`, where the generated theme files are.
+pub const POLARITY_FILE: &str = "plugins/ide/terminal-background";
 
 /// Colour depth available to a surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,8 +169,12 @@ pub struct Glyphs {
     pub prompt: &'static str,
     pub ellipsis: &'static str,
     pub arrow_right: &'static str,
+    /// The tees a title sits between on a heavy line.
     pub inset_left: &'static str,
     pub inset_right: &'static str,
+    /// The same on a light or rounded line.
+    pub inset_light_left: &'static str,
+    pub inset_light_right: &'static str,
     pub rule_heavy: &'static str,
 }
 
@@ -177,6 +196,8 @@ pub const UNICODE_GLYPHS: Glyphs = Glyphs {
     arrow_right: "→",
     inset_left: "┫",
     inset_right: "┣",
+    inset_light_left: "┤",
+    inset_light_right: "├",
     rule_heavy: "━",
 };
 
@@ -198,6 +219,8 @@ pub const ASCII_GLYPHS: Glyphs = Glyphs {
     arrow_right: "->",
     inset_left: "[",
     inset_right: "]",
+    inset_light_left: "[",
+    inset_light_right: "]",
     rule_heavy: "-",
 };
 
@@ -216,9 +239,21 @@ impl Glyphs {
         }
     }
 
-    /// Formats a border-inset title: `┫ title ┣` (Unicode) or `[ title ]` (ASCII).
-    pub fn inset_title(self, title: &str) -> String {
-        format!("{} {} {}", self.inset_left, title.trim(), self.inset_right)
+    /// The tees that match `role`'s line weight: heavy for the frame, light otherwise.
+    pub fn inset(self, role: BorderRole) -> (&'static str, &'static str) {
+        match role {
+            BorderRole::Frame => (self.inset_left, self.inset_right),
+            BorderRole::Content | BorderRole::Operator => {
+                (self.inset_light_left, self.inset_light_right)
+            }
+        }
+    }
+
+    /// A title set into a border of `role`: `┫ title ┣` on a heavy line, `┤ title ├` on a light
+    /// or rounded one, `[ title ]` in ASCII.
+    pub fn inset_title(self, role: BorderRole, title: &str) -> String {
+        let (left, right) = self.inset(role);
+        format!("{left} {} {right}", title.trim())
     }
 }
 
@@ -469,13 +504,19 @@ impl RoleSpec {
                 None => self
                     .ansi256
                     .map(|index| format!("\x1b[38;5;{index}m"))
-                    .or_else(|| self.ansi16.ansi_fg_code().map(|code| format!("\x1b[{code}m")))
+                    .or_else(|| {
+                        self.ansi16
+                            .ansi_fg_code()
+                            .map(|code| format!("\x1b[{code}m"))
+                    })
                     .unwrap_or_default(),
             },
             ColorDepth::Ansi256 => match self.ansi256 {
                 Some(index) => format!("\x1b[38;5;{index}m"),
                 None => match self.rgb {
-                    Some((red, green, blue)) => format!("\x1b[38;5;{}m", rgb_to_256_index(red, green, blue)),
+                    Some((red, green, blue)) => {
+                        format!("\x1b[38;5;{}m", rgb_to_256_index(red, green, blue))
+                    }
                     None => self
                         .ansi16
                         .ansi_fg_code()
@@ -505,13 +546,19 @@ impl RoleSpec {
                 None => self
                     .ansi256
                     .map(|index| format!("\x1b[48;5;{index}m"))
-                    .or_else(|| self.ansi16.ansi_bg_code().map(|code| format!("\x1b[{code}m")))
+                    .or_else(|| {
+                        self.ansi16
+                            .ansi_bg_code()
+                            .map(|code| format!("\x1b[{code}m"))
+                    })
                     .unwrap_or_default(),
             },
             ColorDepth::Ansi256 => match self.ansi256 {
                 Some(index) => format!("\x1b[48;5;{index}m"),
                 None => match self.rgb {
-                    Some((red, green, blue)) => format!("\x1b[48;5;{}m", rgb_to_256_index(red, green, blue)),
+                    Some((red, green, blue)) => {
+                        format!("\x1b[48;5;{}m", rgb_to_256_index(red, green, blue))
+                    }
                     None => self
                         .ansi16
                         .ansi_bg_code()
@@ -541,7 +588,9 @@ impl RoleSpec {
             ColorDepth::Ansi256 => match self.ansi256 {
                 Some(index) => format!("colour{index}"),
                 None => match self.rgb {
-                    Some((red, green, blue)) => format!("colour{}", rgb_to_256_index(red, green, blue)),
+                    Some((red, green, blue)) => {
+                        format!("colour{}", rgb_to_256_index(red, green, blue))
+                    }
                     None => self.ansi16.tmux_name().to_owned(),
                 },
             },
@@ -636,21 +685,42 @@ pub struct Theme {
 const TAG_CUBE_DARK: [u8; 12] = [210, 167, 215, 149, 80, 73, 37, 117, 38, 141, 198, 140];
 const TAG_CUBE_LIGHT: [u8; 12] = [131, 124, 130, 64, 30, 29, 23, 25, 24, 97, 126, 96];
 
-/// Custom `<config>/themes/<name>.yaml` format.
-#[derive(Debug, Default, Deserialize)]
+/// The roles a theme may set, as `config.yaml` and a theme file name them.
+pub const ROLE_NAMES: &str = "text, muted, rule, rule_active, signal, accent, on_accent, working, \
+                              info, failed, surface, selection";
+
+/// Why a theme could not be resolved. Reported by `tx update`; a screen that meets one draws
+/// with the shipped theme instead.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ThemeError {
+    #[error("theme: unknown role `{0}` (the roles are {ROLE_NAMES})")]
+    UnknownRole(String),
+    #[error(
+        "theme: `{value}` for `{role}` is neither #rrggbb nor one of the terminal's sixteen \
+         colour names"
+    )]
+    BadColor { role: String, value: String },
+    #[error("theme: {path}: {reason}")]
+    File { path: String, reason: String },
+}
+
+/// A theme of the user's, `<config>/themes/<name>.yaml`: a shipped theme (`base`) with some
+/// roles replaced, for both backgrounds (`colors`) or for one (`dark`, `light`).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ThemeFile {
-    #[serde(default)]
-    base: Option<String>,
-    #[serde(default)]
-    status_style: Option<StatusStyle>,
-    #[serde(default)]
-    glyphs: Option<GlyphTier>,
+    #[serde(default = "automatic_name")]
+    base: String,
     #[serde(default)]
     colors: BTreeMap<String, String>,
     #[serde(default)]
     dark: BTreeMap<String, String>,
     #[serde(default)]
     light: BTreeMap<String, String>,
+}
+
+fn automatic_name() -> String {
+    "auto".to_owned()
 }
 
 impl Theme {
@@ -893,23 +963,30 @@ impl Theme {
         }
     }
 
-    /// Resolves `settings` against `<config_dir>/themes/`, `polarity` and `depth`.
+    /// Resolves `settings` against `<config_dir>/themes/`, `polarity` and `depth`. A theme that
+    /// names an unknown role, a colour that is neither `#rrggbb` nor one of the terminal's
+    /// sixteen, or a theme file that is missing or malformed, is an error: `tx update` reports
+    /// it instead of applying part of a theme.
     pub fn resolve(
         settings: &ThemeSettings,
         config_dir: &Path,
         polarity: Polarity,
         depth: ColorDepth,
-    ) -> Self {
-        let mut theme = Self::from_name(&settings.name, config_dir, polarity, depth);
+    ) -> Result<Self, ThemeError> {
+        let mut theme = Self::from_name(&settings.name, config_dir, polarity, depth)?;
         theme.status_style = settings.status_style;
         theme.glyph_tier = settings.glyphs;
         theme.glyphs = Glyphs::for_tier(settings.glyphs);
-        theme.apply_overrides(&settings.colors);
-        theme
+        theme.apply_overrides(&settings.colors)?;
+        Ok(theme)
     }
 
     /// Loads `config.yaml` under `config_dir` and resolves the theme.
-    pub fn load(config_dir: &Path, polarity: Polarity, depth: ColorDepth) -> Self {
+    pub fn load(
+        config_dir: &Path,
+        polarity: Polarity,
+        depth: ColorDepth,
+    ) -> Result<Self, ThemeError> {
         let settings = user_config::load(&config_dir.join(user_config::FILE_NAME))
             .map(|config| config.theme)
             .unwrap_or_default();
@@ -917,75 +994,86 @@ impl Theme {
     }
 
     /// Loads the theme for a specific `TxCore` using its resolved config directory.
-    pub fn for_core(core: &tx_core::TxCore, polarity: Polarity, depth: ColorDepth) -> Self {
+    pub fn for_core(
+        core: &tx_core::TxCore,
+        polarity: Polarity,
+        depth: ColorDepth,
+    ) -> Result<Self, ThemeError> {
         Self::load(&core.config().directories.config, polarity, depth)
     }
 
-    fn from_name(name: &str, config_dir: &Path, polarity: Polarity, depth: ColorDepth) -> Self {
-        match name.trim() {
-            "" | "auto" => match polarity {
-                Polarity::Dark => Self::tx_dark(depth),
-                Polarity::Light => Self::tx_light(depth),
-                Polarity::Unknown => Self::terminal(depth),
-            },
-            "tx-dark" | "dark" => Self::tx_dark(depth),
-            "tx-light" | "light" => Self::tx_light(depth),
-            "terminal" => Self::terminal(depth),
-            "tokyo-night" | "tokyonight" => Self::tokyo_night(depth),
+    /// What `auto` means: the designed theme for a known background, the terminal's own colours
+    /// for an unknown one.
+    pub fn automatic(polarity: Polarity, depth: ColorDepth) -> Self {
+        match polarity {
+            Polarity::Dark => Self::tx_dark(depth),
+            Polarity::Light => Self::tx_light(depth),
+            Polarity::Unknown => Self::terminal(depth),
+        }
+    }
+
+    fn from_name(
+        name: &str,
+        config_dir: &Path,
+        polarity: Polarity,
+        depth: ColorDepth,
+    ) -> Result<Self, ThemeError> {
+        match name {
+            "auto" => Ok(Self::automatic(polarity, depth)),
+            "tx-dark" => Ok(Self::tx_dark(depth)),
+            "tx-light" => Ok(Self::tx_light(depth)),
+            "terminal" => Ok(Self::terminal(depth)),
+            "tokyo-night" => Ok(Self::tokyo_night(depth)),
             custom => {
                 let path = config_dir.join("themes").join(format!("{custom}.yaml"));
-                if let Ok(text) = std::fs::read_to_string(&path)
-                    && let Ok(file) = serde_norway::from_str::<ThemeFile>(&text)
-                {
-                    let base = file.base.as_deref().unwrap_or("auto");
-                    let mut theme = Self::from_name(base, config_dir, polarity, depth);
-                    theme.name = custom.to_owned();
-                    if let Some(style) = file.status_style {
-                        theme.status_style = style;
-                    }
-                    if let Some(tier) = file.glyphs {
-                        theme.glyph_tier = tier;
-                        theme.glyphs = Glyphs::for_tier(tier);
-                    }
-                    theme.apply_overrides(&file.colors);
-                    match polarity {
-                        Polarity::Dark => theme.apply_overrides(&file.dark),
-                        Polarity::Light => theme.apply_overrides(&file.light),
-                        Polarity::Unknown => {}
-                    }
-                    theme
-                } else {
-                    Self::from_name("auto", config_dir, polarity, depth)
+                let failed = |reason: String| ThemeError::File {
+                    path: path.display().to_string(),
+                    reason,
+                };
+                let text =
+                    std::fs::read_to_string(&path).map_err(|error| failed(error.to_string()))?;
+                let file: ThemeFile =
+                    serde_norway::from_str(&text).map_err(|error| failed(error.to_string()))?;
+                let mut theme = Self::from_name(&file.base, config_dir, polarity, depth)?;
+                theme.name = custom.to_owned();
+                theme.apply_overrides(&file.colors)?;
+                match polarity {
+                    Polarity::Dark => theme.apply_overrides(&file.dark)?,
+                    Polarity::Light => theme.apply_overrides(&file.light)?,
+                    Polarity::Unknown => {}
                 }
+                Ok(theme)
             }
         }
     }
 
-    fn apply_overrides(&mut self, overrides: &BTreeMap<String, String>) {
-        for (role_name, raw_value) in overrides {
-            let Some(slot) = self.role_mut(role_name) else {
-                continue;
-            };
-            if let Some(parsed) = parse_color_override(raw_value, *slot) {
-                *slot = parsed;
-            }
+    fn apply_overrides(&mut self, overrides: &BTreeMap<String, String>) -> Result<(), ThemeError> {
+        for (role, value) in overrides {
+            let slot = self
+                .role_mut(role)
+                .ok_or_else(|| ThemeError::UnknownRole(role.clone()))?;
+            *slot = parse_color_override(value, *slot).ok_or_else(|| ThemeError::BadColor {
+                role: role.clone(),
+                value: value.clone(),
+            })?;
         }
+        Ok(())
     }
 
     fn role_mut(&mut self, name: &str) -> Option<&mut RoleSpec> {
-        match name.trim().to_ascii_lowercase().replace('-', "_").as_str() {
-            "text" | "fg" => Some(&mut self.text),
-            "muted" | "dim_fg" => Some(&mut self.muted),
-            "rule" | "border" | "border_dim" => Some(&mut self.rule),
-            "rule_active" | "border_active" => Some(&mut self.rule_active),
-            "signal" | "warn" | "attention" => Some(&mut self.signal),
+        match name {
+            "text" => Some(&mut self.text),
+            "muted" => Some(&mut self.muted),
+            "rule" => Some(&mut self.rule),
+            "rule_active" => Some(&mut self.rule_active),
+            "signal" => Some(&mut self.signal),
             "accent" => Some(&mut self.accent),
             "on_accent" => Some(&mut self.on_accent),
-            "working" | "green" => Some(&mut self.working),
+            "working" => Some(&mut self.working),
             "info" => Some(&mut self.info),
-            "failed" | "error" | "red" => Some(&mut self.failed),
-            "surface" | "bg_deep" => Some(&mut self.surface),
-            "selection" | "selection_bg" => Some(&mut self.selection),
+            "failed" => Some(&mut self.failed),
+            "surface" => Some(&mut self.surface),
+            "selection" => Some(&mut self.selection),
             _ => None,
         }
     }
@@ -1051,9 +1139,10 @@ impl Theme {
             return Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED);
         }
         match (self.color(Role::Accent), self.color(Role::OnAccent)) {
-            (Some(background), Some(foreground)) => {
-                Style::new().fg(foreground).bg(background).add_modifier(Modifier::BOLD)
-            }
+            (Some(background), Some(foreground)) => Style::new()
+                .fg(foreground)
+                .bg(background)
+                .add_modifier(Modifier::BOLD),
             (Some(background), None) => Style::new().bg(background).add_modifier(Modifier::BOLD),
             _ => Style::new().add_modifier(Modifier::BOLD | Modifier::REVERSED),
         }
@@ -1152,9 +1241,7 @@ impl Theme {
         let muted = fzf_value(self.spec(Role::Muted), self.depth);
         let selection = fzf_value(self.spec(Role::Selection), self.depth);
         let mut parts = Vec::new();
-        if with_surface_bg
-            && let Some(surface) = fzf_value(self.spec(Role::Surface), self.depth)
-        {
+        if with_surface_bg && let Some(surface) = fzf_value(self.spec(Role::Surface), self.depth) {
             parts.push(format!("bg:{surface}"));
         }
         if let Some(color) = muted.as_deref() {
@@ -1201,13 +1288,12 @@ impl Theme {
         };
         let status_style = format!("fg={},bg={status_bg}", self.tmux_color(Role::Text));
         let popup_style = format!("fg={},bg={surface_bg}", self.tmux_color(Role::Text));
-        let popup_border_style = format!("fg={},bg={surface_bg}", self.tmux_color(Role::RuleActive));
-        let operator_border_style = format!("fg={},bg={surface_bg}", self.tmux_color(Role::RuleActive));
+        let popup_border_style =
+            format!("fg={},bg={surface_bg}", self.tmux_color(Role::RuleActive));
+        let operator_border_style =
+            format!("fg={},bg={surface_bg}", self.tmux_color(Role::RuleActive));
 
-        let active_window_format = format!(
-            "{} #I:#W {}",
-            glyphs.inset_left, glyphs.inset_right
-        );
+        let active_window_format = format!("{} #I:#W {}", glyphs.inset_left, glyphs.inset_right);
         let window_current_style = if self.depth == ColorDepth::None {
             "bold".to_owned()
         } else {
@@ -1217,14 +1303,16 @@ impl Theme {
         let status_format_lines = match self.status_style {
             StatusStyle::Rule => {
                 let rule_char = glyphs.rule_heavy;
-                let windows = "#{W:#{T:window-status-format},#{T:window-status-current-format}}";
-                let pulse = "#{?@tx-pulse,#[#{@tx-rule-active-style}]#{@tx-pulse}#[#{@tx-rule-style}],}";
+                // tmux's own window list, with its styles and its clickable ranges.
+                let windows = "#{W:#[range=window|#{window_index} #{E:window-status-style}]#{T:window-status-format}#[norange default],#[range=window|#{window_index} #{E:window-status-current-style}]#{T:window-status-current-format}#[norange default]}";
+                let pulse =
+                    "#{?@tx-pulse,#[#{@tx-rule-active-style}]#{@tx-pulse}#[#{@tx-rule-style}],}";
                 let fill = format!(
                     "#{{R:{rule_char},#{{e|-:#{{e|-:#{{e|-:#{{e|-:#{{client_width}},#{{w:#{{T:status-left}}}}}},#{{w:#{{E:@tx-windows}}}}}},#{{w:#{{@tx-pulse}}}}}},#{{w:#{{T:status-right}}}}}}}}"
                 );
                 format!(
                     "set -g @tx-windows \"{windows}\"\n\
-                     set -g status-format[0] \"#[align=left]#{{T:status-left}}#{{E:@tx-windows}}#[#{{@tx-rule-style}}]{pulse}{fill}#[default]#{{T:status-right}}\"\n"
+                     set -g status-format[0] \"#[align=left range=left #{{E:status-left-style}}]#{{T:status-left}}#[norange default]#{{E:@tx-windows}}#[#{{@tx-rule-style}}]{pulse}{fill}#[default range=right #{{E:status-right-style}}]#{{T:status-right}}#[norange default]\"\n"
                 )
             }
             StatusStyle::Bar => "set -gu status-format\n".to_owned(),
@@ -1236,6 +1324,8 @@ impl Theme {
              set -g @tx-mark \"{mark}\"\n\
              set -g @tx-inset-left \"{inset_left}\"\n\
              set -g @tx-inset-right \"{inset_right}\"\n\
+             set -g @tx-operator-inset-left \"{operator_inset_left}\"\n\
+             set -g @tx-operator-inset-right \"{operator_inset_right}\"\n\
              set -g @tx-rule-style \"{rule_style}\"\n\
              set -g @tx-rule-active-style \"{rule_active_style}\"\n\
              set -g @tx-signal-style \"{signal_style}\"\n\
@@ -1263,6 +1353,8 @@ impl Theme {
             name = self.name,
             inset_left = glyphs.inset_left,
             inset_right = glyphs.inset_right,
+            operator_inset_left = glyphs.inset_light_left,
+            operator_inset_right = glyphs.inset_light_right,
             frame_lines = BorderRole::Frame.tmux_lines(),
         )
     }
@@ -1308,10 +1400,10 @@ fn fzf_value(spec: RoleSpec, depth: ColorDepth) -> Option<String> {
         ColorDepth::Truecolor => spec
             .hex()
             .or_else(|| spec.ansi256.map(|index| index.to_string())),
-        ColorDepth::Ansi256 => spec
-            .ansi256
-            .map(|index| index.to_string())
-            .or_else(|| spec.rgb.map(|(r, g, b)| rgb_to_256_index(r, g, b).to_string())),
+        ColorDepth::Ansi256 => spec.ansi256.map(|index| index.to_string()).or_else(|| {
+            spec.rgb
+                .map(|(r, g, b)| rgb_to_256_index(r, g, b).to_string())
+        }),
         ColorDepth::Ansi16 => {
             if spec.reverse_on_16 || spec.ansi16 == Ansi16::Default {
                 None
@@ -1388,23 +1480,29 @@ fn rgb_to_16(red: u8, green: u8, blue: u8) -> Color {
         .unwrap_or(Color::Reset)
 }
 
-/// Process-wide resolved theme, loaded once from `TX_CONFIG_DIR` (or default XDG config dir),
-/// `TX_THEME_POLARITY`, and detected colour depth.
+/// Process-wide resolved theme, loaded once: the configuration the environment names, the
+/// terminal's background (`TX_THEME_POLARITY`, else the recorded one), the detected colour depth.
 pub fn active() -> &'static Theme {
     static ACTIVE: OnceLock<Theme> = OnceLock::new();
     ACTIVE.get_or_init(load_from_env)
 }
 
-/// Loads the active theme from environment variables without caching.
+/// Loads the active theme from the environment without caching. An unknown background resolves
+/// `auto` to the `terminal` theme, never to a guessed dark one.
 pub fn load_from_env() -> Theme {
-    let config_dir = tx_core::host::setup::core_config(&tx_core::host::args::Global::default())
-        .map(|configuration| configuration.directories.config)
-        .unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let polarity = std::env::var("TX_THEME_POLARITY")
-        .map(|value| Polarity::parse(&value))
-        .unwrap_or(Polarity::Dark);
     let depth = ColorDepth::detect();
-    Theme::load(&config_dir, polarity, depth)
+    let Ok(configuration) =
+        tx_core::host::setup::core_config(&tx_core::host::args::Global::default())
+    else {
+        return Theme::terminal(depth);
+    };
+    let directories = configuration.directories;
+    let polarity = std::env::var("TX_THEME_POLARITY").map_or_else(
+        |_| Polarity::recorded(&directories.data),
+        |value| Polarity::parse(&value),
+    );
+    Theme::load(&directories.config, polarity, depth)
+        .unwrap_or_else(|_| Theme::automatic(polarity, depth))
 }
 
 #[cfg(test)]
@@ -1455,20 +1553,34 @@ mod tests {
         }
     }
 
+    fn resolved(settings: &ThemeSettings, config_dir: &Path, polarity: Polarity) -> Theme {
+        Theme::resolve(settings, config_dir, polarity, ColorDepth::Truecolor).unwrap()
+    }
+
+    #[test]
+    fn a_reported_background_is_recorded_and_an_unknown_one_is_not() {
+        let data = tempfile::tempdir().unwrap();
+        assert_eq!(Polarity::recorded(data.path()), Polarity::Unknown);
+        Polarity::Light.record(data.path()).unwrap();
+        assert_eq!(Polarity::recorded(data.path()), Polarity::Light);
+        Polarity::Unknown.record(data.path()).unwrap();
+        assert_eq!(Polarity::recorded(data.path()), Polarity::Light);
+    }
+
     #[test]
     fn auto_falls_back_to_terminal_when_polarity_is_unknown() {
         let dir = tempfile::tempdir().unwrap();
         let settings = ThemeSettings::default();
         assert_eq!(
-            Theme::resolve(&settings, dir.path(), Polarity::Dark, ColorDepth::Truecolor).name,
+            resolved(&settings, dir.path(), Polarity::Dark).name,
             "tx-dark"
         );
         assert_eq!(
-            Theme::resolve(&settings, dir.path(), Polarity::Light, ColorDepth::Truecolor).name,
+            resolved(&settings, dir.path(), Polarity::Light).name,
             "tx-light"
         );
         assert_eq!(
-            Theme::resolve(&settings, dir.path(), Polarity::Unknown, ColorDepth::Truecolor).name,
+            resolved(&settings, dir.path(), Polarity::Unknown).name,
             "terminal"
         );
     }
@@ -1478,7 +1590,11 @@ mod tests {
         let light = Theme::tx_light(ColorDepth::Ansi16);
         let style = light.style(Role::Signal);
         assert_eq!(style.fg, None);
-        assert!(style.add_modifier.contains(Modifier::REVERSED | Modifier::BOLD));
+        assert!(
+            style
+                .add_modifier
+                .contains(Modifier::REVERSED | Modifier::BOLD)
+        );
         assert_eq!(light.tmux_fg_style(Role::Signal), "fg=default,bold,reverse");
     }
 
@@ -1498,17 +1614,56 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("themes")).unwrap();
         std::fs::write(
             dir.path().join("themes/mine.yaml"),
-            "base: tx-dark\nstatus_style: bar\ndark:\n  accent: \"#ff75b5\"\n",
+            "base: tx-dark\ncolors:\n  working: green\ndark:\n  accent: \"#ff75b5\"\nlight:\n  accent: \"#a01060\"\n",
         )
         .unwrap();
         let mut settings = ThemeSettings {
             name: "mine".to_owned(),
             ..ThemeSettings::default()
         };
-        settings.colors.insert("signal".to_owned(), "#ffb000".to_owned());
-        let resolved = Theme::resolve(&settings, dir.path(), Polarity::Dark, ColorDepth::Truecolor);
-        assert_eq!(resolved.color(Role::Accent), Some(Color::Rgb(255, 117, 181)));
-        assert_eq!(resolved.color(Role::Signal), Some(Color::Rgb(255, 176, 0)));
+        settings
+            .colors
+            .insert("signal".to_owned(), "#ffb000".to_owned());
+        let theme = resolved(&settings, dir.path(), Polarity::Dark);
+        assert_eq!(theme.name, "mine");
+        assert_eq!(theme.color(Role::Accent), Some(Color::Rgb(255, 117, 181)));
+        assert_eq!(theme.color(Role::Signal), Some(Color::Rgb(255, 176, 0)));
+        assert_eq!(theme.color(Role::Working), Some(Color::Green));
+        let light = resolved(&settings, dir.path(), Polarity::Light);
+        assert_eq!(light.color(Role::Accent), Some(Color::Rgb(160, 16, 96)));
+    }
+
+    #[test]
+    fn a_theme_that_cannot_be_applied_whole_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let resolve = |settings: &ThemeSettings| {
+            Theme::resolve(settings, dir.path(), Polarity::Dark, ColorDepth::Truecolor)
+        };
+        let with_color = |role: &str, value: &str| {
+            let mut settings = ThemeSettings::default();
+            settings.colors.insert(role.to_owned(), value.to_owned());
+            settings
+        };
+        assert_eq!(
+            resolve(&with_color("acent", "#32b8ac")),
+            Err(ThemeError::UnknownRole("acent".to_owned()))
+        );
+        let error = resolve(&with_color("accent", "teal")).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "theme: `teal` for `accent` is neither #rrggbb nor one of the terminal's sixteen \
+             colour names"
+        );
+        let missing = ThemeSettings {
+            name: "nowhere".to_owned(),
+            ..ThemeSettings::default()
+        };
+        let error = resolve(&missing).unwrap_err().to_string();
+        assert!(error.contains("themes/nowhere.yaml"), "{error}");
+        std::fs::create_dir_all(dir.path().join("themes")).unwrap();
+        std::fs::write(dir.path().join("themes/nowhere.yaml"), "colours: {}\n").unwrap();
+        let error = resolve(&missing).unwrap_err().to_string();
+        assert!(error.contains("unknown field `colours`"), "{error}");
     }
 
     #[test]

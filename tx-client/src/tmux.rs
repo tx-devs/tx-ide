@@ -515,7 +515,9 @@ pub fn popup_args(
     let rule_active_style = theme.tmux_fg_style(crate::theme::Role::RuleActive);
     let style = format!("bg={surface_bg},fg={text}");
     let border = format!("bg={surface_bg},fg={rule_active}");
-    let inset = theme.glyphs.inset_title(title);
+    let inset = theme
+        .glyphs
+        .inset_title(crate::theme::BorderRole::Frame, title);
     let title = format!("#[{rule_active_style}]{inset}#[default]");
     [
         "display-popup",

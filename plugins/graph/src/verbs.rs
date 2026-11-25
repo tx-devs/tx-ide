@@ -275,9 +275,10 @@ impl Verb for GraphOpen {
             .collect::<Vec<_>>()
             .join(" ");
         let theme = tx_client::theme::active();
-        let title = theme
-            .glyphs
-            .inset_title(&format!("{} graph", theme.glyphs.mark));
+        let title = theme.glyphs.inset_title(
+            tx_client::theme::BorderRole::Frame,
+            &format!("{} graph", theme.glyphs.mark),
+        );
         ui.run(&[
             "display-popup",
             "-c",

@@ -20,7 +20,7 @@ use tx_chat::transcript::clock;
 use crate::app::{App, Mode, PULSE_TRAVEL, Purpose};
 use crate::layout;
 use crate::model::{Edge, Graph, Node, NodeState};
-use tx_client::theme::{Role, active};
+use tx_client::theme::{BorderRole, Role, active};
 
 /// Above this share of its window, a context gauge turns signal amber.
 const CONTEXT_WARN: f64 = 0.8;
@@ -324,7 +324,10 @@ fn header_line(app: &App) -> Paragraph<'static> {
         (Some(group), Some(tag)) => format!("{group} · tag {tag}"),
     };
     let mut spans = vec![
-        Span::styled(format!(" {} {}", glyphs.mark, app.brand), bold(Role::Accent)),
+        Span::styled(
+            format!(" {} {}", glyphs.mark, app.brand),
+            bold(Role::Accent),
+        ),
         Span::styled("  graph  ", dim()),
         Span::styled(scope, bold(Role::Text)),
         Span::styled(format!("   {} · ", counted(agents, "agent")), dim()),
@@ -367,7 +370,10 @@ fn column_labels(app: &App, width: u16) -> Paragraph<'static> {
 
 fn legend_line() -> Paragraph<'static> {
     let swatch = |glyph: &'static str, target: Role, label: &'static str| {
-        [Span::styled(glyph, bold(target)), Span::styled(label, dim())]
+        [
+            Span::styled(glyph, bold(target)),
+            Span::styled(label, dim()),
+        ]
     };
     let mut spans = vec![Span::raw("  ")];
     spans.extend(swatch("┏┓", Role::Accent, " selected   "));
@@ -432,9 +438,10 @@ fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
     let graph = &app.graph;
     let node = &graph.nodes[app.selected];
     let theme = active();
-    let title = theme
-        .glyphs
-        .inset_title(&cut(&node.name, usize::from(area.width.saturating_sub(6))));
+    let title = theme.glyphs.inset_title(
+        BorderRole::Frame,
+        &cut(&node.name, usize::from(area.width.saturating_sub(6))),
+    );
     let block = Block::bordered()
         .border_type(BorderType::Thick)
         .border_style(bold(Role::Accent))
@@ -542,7 +549,10 @@ fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
         Some((_, Some(ratio))) => frame.render_widget(
             LineGauge::default()
                 .ratio(ratio)
-                .label(Span::styled(format!("{:>3.0}%", ratio * 100.0), role(Role::Text)))
+                .label(Span::styled(
+                    format!("{:>3.0}%", ratio * 100.0),
+                    role(Role::Text),
+                ))
                 .filled_symbol("━")
                 .unfilled_symbol("─")
                 .filled_style(bold(if ratio > CONTEXT_WARN {
@@ -555,7 +565,10 @@ fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
         ),
         Some((context, None)) => frame.render_widget(
             Paragraph::new(Line::from(vec![
-                Span::styled(format!("{} tokens", tokens(context.tokens)), role(Role::Text)),
+                Span::styled(
+                    format!("{} tokens", tokens(context.tokens)),
+                    role(Role::Text),
+                ),
                 Span::styled(" · window unknown", dim()),
             ])),
             gauge,
@@ -574,7 +587,10 @@ fn draw_sidebar(app: &App, frame: &mut Frame, area: Rect) {
         .map(|traffic| {
             Line::from(vec![
                 Span::styled(format!(" {} ", clock::clock_label(traffic.at)), dim()),
-                Span::styled(cut(&graph.nodes[traffic.from].name, width), role(Role::Text)),
+                Span::styled(
+                    cut(&graph.nodes[traffic.from].name, width),
+                    role(Role::Text),
+                ),
                 Span::styled(" ━▸ ", role(Role::Info)),
                 Span::styled(cut(&graph.nodes[traffic.to].name, width), role(Role::Text)),
             ])
@@ -839,7 +855,11 @@ fn draw_edges(app: &App, area: Rect, buffer: &mut Buffer) {
             theme.color(Role::Info)
         } else {
             let strength = 0.35 + 0.65 * f64::from(edge.messages()) / f64::from(busiest);
-            mix(theme.color(Role::Surface), theme.color(Role::Info), strength * 0.7)
+            mix(
+                theme.color(Role::Surface),
+                theme.color(Role::Info),
+                strength * 0.7,
+            )
         }
     };
     // Quiet edges first, the selection's last, so a shared trunk shows its brightest use.
@@ -992,7 +1012,11 @@ fn draw_pulse(
         let shade = if trail == 0 {
             theme.color(Role::Text)
         } else {
-            mix(theme.color(Role::Info), edge, f64::from(trail) / f64::from(PULSE_TRAIL))
+            mix(
+                theme.color(Role::Info),
+                edge,
+                f64::from(trail) / f64::from(PULSE_TRAIL),
+            )
         };
         context.draw(&Points {
             coords: &[(x, y), (x, y + 0.25), (x + 0.5, y)],
@@ -1032,11 +1056,17 @@ fn draw_node(app: &App, index: usize, rect: Rect, selected: bool, buffer: &mut B
         bold(state_role(state))
     };
     let room = usize::from(rect.width.saturating_sub(8));
+    let border_role = if state == NodeState::Operator {
+        BorderRole::Operator
+    } else {
+        BorderRole::Frame
+    };
+    let (inset_left, inset_right) = theme.glyphs.inset(border_role);
     let title = Line::from(vec![
-        Span::styled(format!("{} ", theme.glyphs.inset_left), border_style),
+        Span::styled(format!("{inset_left} "), border_style),
         Span::styled(glyph(state, app.clock), glyph_style),
         Span::styled(format!(" {} ", cut(&node.name, room)), name_style),
-        Span::styled(theme.glyphs.inset_right, border_style),
+        Span::styled(inset_right, border_style),
     ]);
     let block = Block::bordered()
         .border_type(if state == NodeState::Operator {

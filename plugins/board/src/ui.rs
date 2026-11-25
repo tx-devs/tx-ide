@@ -9,7 +9,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 use tx_client::palette::indexed;
-use tx_client::theme::{ColorDepth, Role, active};
+use tx_client::theme::{BorderRole, ColorDepth, Role, active};
 use tx_core::LlmEngineState;
 
 use super::app::{App, Picker};
@@ -182,9 +182,10 @@ fn draw_column(app: &App, kind: ColumnKind, area: Rect, frame: &mut Frame) {
     } else {
         theme.style(Role::Rule)
     };
-    let title = theme
-        .glyphs
-        .inset_title(&format!("{} {}", kind.title(), cards.len()));
+    let title = theme.glyphs.inset_title(
+        BorderRole::Content,
+        &format!("{} {}", kind.title(), cards.len()),
+    );
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
@@ -286,7 +287,7 @@ fn draw_drawer(app: &App, area: Rect, frame: &mut Frame) {
         .border_type(BorderType::Plain)
         .border_style(border)
         .title(Span::styled(
-            theme.glyphs.inset_title(&clipped),
+            theme.glyphs.inset_title(BorderRole::Content, &clipped),
             text().add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
@@ -464,7 +465,7 @@ fn draw_problem(problem: &Failure, area: Rect, frame: &mut Frame) {
         .border_type(BorderType::Thick)
         .border_style(signal)
         .title(Span::styled(
-            theme.glyphs.inset_title(title),
+            theme.glyphs.inset_title(BorderRole::Frame, title),
             signal.add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(area);
@@ -503,7 +504,10 @@ fn draw_picker(picker: &mut Picker, area: Rect, frame: &mut Frame) {
         .border_type(BorderType::Rounded)
         .border_style(accent())
         .title(Span::styled(
-            theme.glyphs.inset_title(&format!("labels of #{}", picker.number)),
+            theme.glyphs.inset_title(
+                BorderRole::Operator,
+                &format!("labels of #{}", picker.number),
+            ),
             accent().add_modifier(Modifier::BOLD),
         ));
     let inner = block.inner(popup);

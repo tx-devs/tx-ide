@@ -219,7 +219,7 @@ impl Data<'_> {
     }
 }
 
-/// Whether a `◐` spinner shows: an agent or the assistant is starting.
+/// Whether the starting spinner shows: an agent or the assistant is starting.
 fn spinning(home: &Home) -> bool {
     home.context
         .agents

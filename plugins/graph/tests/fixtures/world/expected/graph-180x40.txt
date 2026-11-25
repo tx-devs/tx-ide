@@ -1,7 +1,7 @@
  ╋╳ tx-ide  graph  all agents   11 agents · ● 4 working · ▲ 1 needs you · ━ 26 messages / 1h
 
   depth 0                               1                                     2                                     3                           ┏┫ you ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-  ╭┫ ◇ you ┣─────────────╮⢀⣀                                                                                                                    ┃ role        operator             ┃
+  ╭┤ ◇ you ├─────────────╮⢀⣀                                                                                                                    ┃ role        operator             ┃
   │ 4 sent               │⠉⠑⠿⣢                                                                                                                  ┃ sent        4                    ┃
   │                      │   ⠱⣣                                                                                                                 ┃                                  ┃
   ╰──────────────────────╯    ⠱⣣                                                                                                                ┃                                  ┃

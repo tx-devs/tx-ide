@@ -1,7 +1,7 @@
  ╋╳ tx-ide  graph  persistent-views   5 agents · ● 2 working · ▲ 1 needs you · ━ 18 messages / 1h
 
   depth 0                              1                                    2                           ┏┫ you ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-  ╭┫ ◇ you ┣─────────────╮⢀⣀⣀                                                                           ┃ role        operator             ┃
+  ╭┤ ◇ you ├─────────────╮⢀⣀⣀                                                                           ┃ role        operator             ┃
   │ 1 sent               │⠉⠉⠑⠵⡢⡀                                                                        ┃ sent        1                    ┃
   │                      │    ⠘⡵⡀                                                                       ┃                                  ┃
   ╰──────────────────────╯     1                                                                        ┃                                  ┃

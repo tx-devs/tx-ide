@@ -15,8 +15,8 @@ popup_width=$((pane_width - 4))
 # Placed over the firing pane; the form needs 9 rows. The popup closes when the editor exits —
 # a failure is reported on the status line.
 BORDER_STYLE=$(tmux show-option -gv @tx-popup-operator-border-style 2>/dev/null || true)
-INSET_LEFT=$(tmux show-option -gv @tx-inset-left 2>/dev/null || printf '┫')
-INSET_RIGHT=$(tmux show-option -gv @tx-inset-right 2>/dev/null || printf '┣')
+INSET_LEFT=$(tmux show-option -gv @tx-operator-inset-left 2>/dev/null || printf '┤')
+INSET_RIGHT=$(tmux show-option -gv @tx-operator-inset-right 2>/dev/null || printf '├')
 printf -v edit_command '%s _edit-session %q %q' "$TX" "$pane_id" "$client_name"
 if [ -n "$BORDER_STYLE" ]; then
   exec tmux display-popup -c "$client_name" -t "$pane_id" -E -w "$popup_width" -h 11 \

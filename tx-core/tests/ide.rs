@@ -42,6 +42,7 @@ fn expected_conf(cli: &Cli) -> String {
          set -g @tx-arguments \"{arguments}\"\n\
          set-environment -g TX_BIN \"{exe}\"\n\
          source-file \"{state}/conf/tmux.conf\"\n\
+         source-file \"{state}/conf/theme.tmux\"\n\
          run-shell \"/usr/bin/env bash {state}/keys/ide.tmux\"\n\
          run-shell \"/usr/bin/env bash {state}/keys/artifacts.tmux\"\n\
          run-shell \"/usr/bin/env bash {state}/keys/assistant.tmux\"\n\
@@ -185,7 +186,7 @@ fn the_ide_bundle_is_the_shipped_plugin_and_its_verbs_and_updater_are_its_progra
     assert_eq!(row["needs"], serde_json::json!(["tmux", "nvim"]));
     assert_eq!(
         row["verbs"],
-        serde_json::json!(["ui", "_resource", "_show", "_attach-into"])
+        serde_json::json!(["ui", "_resource", "_show", "_attach-into", "_theme-apply"])
     );
     assert_eq!(help_lines(&cli), HELP_LINES);
     // A verb is the program, once; so is the updater.
@@ -1032,13 +1033,16 @@ fn the_server_ui_attach_starts_holds_what_the_caller_of_tx_held() {
     assert_eq!(held, expected);
 }
 
+/// The home's pane as text. A backdrop's half-blocks read as blanks: it may paint one in the gap
+/// between two words of the home's text.
 fn home_pane(cli: &Cli) -> String {
     cli.tmux_out(&["capture-pane", "-p", "-t", "=home:"])
+        .replace('▀', " ")
 }
 
 fn home_tui_shown(cli: &Cli) -> bool {
     let screen = home_pane(cli);
-    screen.contains("tx-ide") && screen.contains("enter attach")
+    screen.contains("╋╳") && screen.contains("enter attach")
 }
 
 #[test]
@@ -1148,7 +1152,11 @@ fn ui_attach_lands_on_the_home_tui_and_the_assistant_comes_up_behind_it() {
     let assistant_row = || {
         let screen = home_pane(&cli);
         screen.contains("tx-assistant")
-            && (screen.contains("assistant ◐ starting") || screen.contains("assistant ● ready"))
+            && (screen.contains("assistant ▖ starting")
+                || screen.contains("assistant ▘ starting")
+                || screen.contains("assistant ▝ starting")
+                || screen.contains("assistant ▗ starting")
+                || screen.contains("assistant ● ready"))
     };
     assert!(
         cli.wait_for(30, assistant_row),
@@ -1183,7 +1191,7 @@ fn ui_attach_without_the_roles_installed_shows_the_failed_assistant() {
     assert!(stderr.contains("nesting inside another tmux"), "{stderr:?}");
     assert!(cli.tmux(&["has-session", "-t", "=home"]).status.success());
     assert!(
-        cli.wait_for(20, || home_pane(&cli).contains("assistant ✗ failed")),
+        cli.wait_for(20, || home_pane(&cli).contains("assistant × failed")),
         "the header never reported the failed warm:\n{}",
         home_pane(&cli)
     );
@@ -1203,7 +1211,7 @@ fn ui_attach_without_the_roles_installed_shows_the_failed_assistant() {
     );
     assert!(
         cli.wait_for(20, || pid() != failed_pid
-            && home_pane(&cli).contains("assistant ✗ failed")),
+            && home_pane(&cli).contains("assistant × failed")),
         "r did not warm again:\n{}",
         home_pane(&cli)
     );
@@ -1220,7 +1228,11 @@ fn ui_attach_without_the_roles_installed_shows_the_failed_assistant() {
         cli.wait_for(30, || {
             let screen = home_pane(&cli);
             !screen.contains("failed")
-                && (screen.contains("assistant ◐ starting") || screen.contains("assistant ● ready"))
+                && (screen.contains("assistant ▖ starting")
+                    || screen.contains("assistant ▘ starting")
+                    || screen.contains("assistant ▝ starting")
+                    || screen.contains("assistant ▗ starting")
+                    || screen.contains("assistant ● ready"))
         }),
         "the header never left failed:\n{}",
         home_pane(&cli)
@@ -1461,7 +1473,9 @@ fn attach_to_picks_a_pane_by_number_and_enter_attaches_there() {
 
     cli.ok(&["_show", &client, "attach-to", "target", first]);
     assert_eq!(table(), "tx-attach-to");
-    assert_eq!(border(), "fg=#e0af68,bold");
+    let signal = cli.tmux_out(&["show-option", "-gv", "@tx-signal-style"]);
+    assert!(!signal.is_empty(), "theme never set @tx-signal-style");
+    assert_eq!(border(), signal);
     press(second_index);
     press("9");
     press("x");
