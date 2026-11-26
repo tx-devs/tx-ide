@@ -11,15 +11,11 @@ verbs:
     bin: tx-picker
     args: [_list]
   - name: pick
-    usage: "pick [-f QUERY] [-j]   fzf session picker (prefix+t)"
+    usage: "pick [-f QUERY]   fzf session picker (prefix+t)"
     bin: tx-picker
     args: [pick]
-  - name: _picker-popup
-    usage: "_picker-popup <client> <name>   a picked session in a popup (alt-p, internal)"
-    bin: tx-picker
-    args: [_picker-popup]
   - name: _picker-key
-    usage: "_picker-key <esc|enter|p>   the picker's normal-mode key handler (internal)"
+    usage: "_picker-key esc   the picker's Esc handler (internal)"
     bin: tx-picker
     args: [_picker-key]
   - name: _roles
