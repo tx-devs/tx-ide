@@ -148,10 +148,16 @@ attach also starts the assistant in the background.
 | prefix+Space | go to the next agent that needs you |
 | prefix+a | in an agent: the artifacts it touched, its parent and children; in a view: back to its agent |
 | prefix+s | refresh the labels, then `choose-tree` |
-| prefix+\| / prefix+- | split right / below |
+| prefix+? | a keyboard of the prefix keys: tx's, tmux's and free ones |
 | C-h / C-j / C-k / C-l | move between nvim splits and panes, out of nested sessions too |
 | C-u / C-d | page an agent's scrollback |
-| C-a C-a d | leave a nested agent or view; it keeps running |
+| C-Tab / C-S-Tab, M-1..9 | next / previous window; pane 1-9 |
+| prefix prefix d | leave a nested agent or view; it keeps running |
+
+The prefix is tmux's own (`C-b` unless your `~/.config/tx-ide/tmux.conf` sets another). Every key in
+this table except the last is a setting of the plugin that owns it (`tx config` lists them), and
+tmux's own keys (splits, layouts, copy mode) are tmux's defaults; see
+[the tmux layer](docs-site/guide/src/tmux-and-views.md#keys) to move or drop a key or add your own.
 
 In the home: j/k move, Enter attaches (or resumes an ended agent), → unfolds an agent's detail, n
 starts an agent, x stops one, r resumes one, a its artifacts, / asks the assistant, f finds, w the

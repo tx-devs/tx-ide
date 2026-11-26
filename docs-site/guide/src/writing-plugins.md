@@ -195,10 +195,14 @@ them when the shipped plugins are chosen:
 - `needs`: the checklist shows `needs <program> (not found)` for a program that is not on `PATH`,
   and `tx harness check` warns about it. The plugin can still be selected.
 - `settings` are the plugin's defaults at run time: what `config.yaml` gives the plugin
-  (`plugins.<id>.settings`, a mapping) is laid over them key by key, a `null` replacing a
-  default, and the result is what the plugin's programs get. Nothing writes them into
-  `config.yaml`; `tx config --defaults` prints the block as the manifest has it, comments
-  included, so write a comment per key.
+  (`plugins.<id>.settings`) is laid over them key by key, a `null` replacing a default, and the
+  result is what the plugin's programs get. Where the manifest's settings are a mapping the
+  user's must be one too. Nothing writes them into `config.yaml`; `tx config --defaults` prints
+  the block as the manifest has it, comments included, so write it in block style with a comment
+  per key. A plugin that binds keys puts its key table there, `keys:`, action name to tmux key
+  (see [A key](developing.md)); core checks a user's `keys` against it (an unknown action, or a
+  value that is not a tmux key, is refused by name). A plugin whose own code reads its settings
+  strictly must accept `keys` without reading it.
 
 Rules checked when the manifest is read:
 
