@@ -21,5 +21,8 @@ serde_json.workspace = true
 tempfile.workspace = true
 ratatui = "0.30"
 
+[dev-dependencies]
+serde_norway.workspace = true
+
 [lints]
 workspace = true

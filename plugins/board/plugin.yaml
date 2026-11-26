@@ -4,7 +4,10 @@ description: A GitHub issue board in the terminal (ratatui), with the tx agents 
 tier: ide
 requires: [ide]
 needs: [gh, git]
-settings: { repository: null }
+settings:
+  repository: null               # OWNER/NAME; null: the repository of the pane's checkout
+  keys:
+    open: b                      # prefix+b: the GitHub issue board in a popup
 
 verbs:
   - name: board

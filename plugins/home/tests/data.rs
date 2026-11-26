@@ -19,6 +19,14 @@ fn core() -> (tempfile::TempDir, TxCore) {
 
 /// A core with the home and `others` plugged in.
 fn core_with(others: Vec<Box<dyn Plugin>>) -> (tempfile::TempDir, TxCore) {
+    core_with_settings(others, PluginConfig::default())
+}
+
+/// A core with the home and `others` plugged in, given `configuration`.
+fn core_with_settings(
+    others: Vec<Box<dyn Plugin>>,
+    configuration: PluginConfig,
+) -> (tempfile::TempDir, TxCore) {
     let dir = tempfile::Builder::new()
         .prefix("tx")
         .tempdir_in("/tmp")
@@ -29,7 +37,7 @@ fn core_with(others: Vec<Box<dyn Plugin>>) -> (tempfile::TempDir, TxCore) {
     .unwrap();
     let mut plugins: Vec<Box<dyn Plugin>> = vec![Box::new(HomePlugin)];
     plugins.extend(others);
-    core.plug(plugins, &PluginConfig::default()).unwrap();
+    core.plug(plugins, &configuration).unwrap();
     (dir, core)
 }
 
@@ -102,26 +110,27 @@ fn without_the_artifact_verb_there_are_no_counts() {
 }
 
 /// The cheat sheet is what `tx update` published under `<data>/keys`, for the active plugins
-/// only: a fragment left by a plugin that is not there gives no hint.
+/// only: a fragment left by a plugin that is not there gives no hint. A key is the one the
+/// plugin's `keys` setting gives the action the fragment declares.
 #[test]
 fn the_key_hints_are_read_from_the_published_fragments_of_the_active_plugins() {
-    let (_dir, core) = core();
+    let mut configuration = PluginConfig::default();
+    configuration.settings.insert(
+        "home".to_owned(),
+        serde_json::json!({"keys": {"open": "M"}}),
+    );
+    let (_dir, core) = core_with_settings(Vec::new(), configuration);
     let keys = core.config().directories.data.join("keys");
     std::fs::create_dir_all(&keys).unwrap();
-    let fragment =
-        "#!/usr/bin/env bash\n# keys: m\n# tx key plugin `home`: prefix+m opens the home.\n";
+    let fragment = "#!/usr/bin/env bash\n# keys: open\n# tx key plugin `home`: opens the home.\n";
     std::fs::write(keys.join("home.tmux"), fragment).unwrap();
-    std::fs::write(
-        keys.join("gone.tmux"),
-        fragment.replace("keys: m", "keys: g"),
-    )
-    .unwrap();
+    std::fs::write(keys.join("gone.tmux"), fragment).unwrap();
     let ui = Ui::from_core(&core);
     let gathered = context(&core, &ui, &mut ProjectCache::new(), None).unwrap();
     assert_eq!(gathered.keys.len(), 1, "{:?}", gathered.keys);
     assert_eq!(gathered.keys[0].plugin, "home");
-    assert_eq!(gathered.keys[0].keys, ["m"]);
-    assert_eq!(gathered.keys[0].text, "prefix+m opens the home");
+    assert_eq!(gathered.keys[0].keys, ["M"]);
+    assert_eq!(gathered.keys[0].text, "opens the home");
 }
 
 /// A context is gathered every second and `layout ls` is another plugin's program: it runs for

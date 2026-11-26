@@ -268,18 +268,22 @@ impl Verb for NewAgent {
             .filter_map(|kind| core.engine(kind))
             .map(EngineOffer::of)
             .collect();
+        let label = tx_core::keys::label(core, PLUGIN_ID, "new_agent");
         if engines.is_empty() {
-            ui.display_status(client, "prefix+n: no engine plugin is active");
+            ui.display_status(client, &format!("{label}: no engine plugin is active"));
             return Ok(1);
         }
         let agents = match agent_names(core.config().directories.harness_roots()) {
             Ok(agents) if agents.is_empty() => {
-                ui.display_status(client, "prefix+n: no agent definitions (run `tx update`)");
+                ui.display_status(
+                    client,
+                    &format!("{label}: no agent definitions (run `tx update`)"),
+                );
                 return Ok(1);
             }
             Ok(agents) => agents,
             Err(error) => {
-                ui.display_status(client, &format!("prefix+n: {error}"));
+                ui.display_status(client, &format!("{label}: {error}"));
                 return Ok(1);
             }
         };

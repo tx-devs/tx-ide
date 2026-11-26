@@ -10,13 +10,13 @@ use std::process::Stdio;
 use tx_client::theme::{ColorDepth, Polarity, Theme};
 use tx_client::tmux::{Ui, UiError};
 use tx_client::views::{self, ViewKind, ViewRequest};
-use tx_core::core::DEFAULT_TMUX_CONF;
+use tx_core::core::{DEFAULT_TMUX_CONF, TMUX_CONF_HEADER};
 use tx_core::host::bundle::KEYS_INSTALLED;
 use tx_core::host::setup::ROLES_DIR;
 use tx_core::plugin::manifest::RESOURCE_KINDS;
 use tx_core::sdk::TX_BIN_ENV;
 use tx_core::updates::Outcome;
-use tx_core::{TxCore, Updater, Verb, VerbError, VerbIo};
+use tx_core::{TxCore, Updater, Verb, VerbError, VerbIo, keys};
 
 use crate::view_verb;
 
@@ -26,6 +26,8 @@ const IDE_FRAGMENT: &str = "ide";
 const KEYS_DIR: &str = "keys";
 const FRAGMENT_EXTENSION: &str = "tmux";
 const LEGACY_HINT: &str = "legacy bindings may remain; restart the server to drop them";
+/// What every key option's name starts with: `@tx-key-<plugin>-<action>`.
+const KEY_OPTION_PREFIX: &str = "@tx-key-";
 /// The server options the composed config sets in its own first lines (see [`conf_text`]); with
 /// `TX_BIN` in the server's environment, what a retire takes back next to the fragments' keys.
 /// `@tx-bin` is also how the updater recognises a server whose bindings were never recorded.
@@ -52,22 +54,40 @@ const ROLES_RESOURCE: &str = "agents";
 /// interpreter its first line names, never as an executable file: on macOS the first direct run
 /// of a freshly written executable is assessed by the system one file at a time, 0.4 s alone and
 /// seconds when many run at once, while the same file run by an interpreter is not.
-fn conf_text(exe: &Path, data: &Path, arguments: &[String], fragments: &[(&str, &str)]) -> String {
+///
+/// Order: these options and every key option ([`key_options`]), the shipped options
+/// (`conf/tmux.conf`, the theme), the key fragments, and last the user's own tmux.conf when it
+/// exists (`-q`), so the user's values win on server start and on every reload. `user_conf` is
+/// `None` when the config and data directories are one, where `<config>/tmux.conf` is this file
+/// itself.
+fn conf_text(
+    exe: &Path,
+    data: &Path,
+    arguments: &[String],
+    keys: &[(String, String)],
+    fragments: &[(&str, &str)],
+    user_conf: Option<&Path>,
+) -> String {
     let data = data.display();
     let exe = exe.display();
     let arguments = arguments.join(" ");
     let mut text = format!(
-        "# tx-core server config, written by `tx update`. Re-run to update.\n\
+        "{TMUX_CONF_HEADER}, written by `tx update`. Re-run to update.\n\
          set -s exit-empty on\n\
          set -g history-limit 50000\n\
          set -g detach-on-destroy on\n\
          set -g @tx-bin \"{exe}\"\n\
          set -g @tx-data \"{data}\"\n\
          set -g @tx-arguments \"{arguments}\"\n\
-         set-environment -g TX_BIN \"{exe}\"\n\
-         source-file \"{data}/conf/tmux.conf\"\n\
-         source-file \"{data}/conf/theme.tmux\"\n",
+         set-environment -g TX_BIN \"{exe}\"\n",
     );
+    for (option, key) in keys {
+        text.push_str(&format!("set -g {option} '{key}'\n"));
+    }
+    text.push_str(&format!(
+        "source-file \"{data}/conf/tmux.conf\"\n\
+         source-file \"{data}/conf/theme.tmux\"\n"
+    ));
     for (id, fragment) in fragments {
         let interpreter = fragment
             .lines()
@@ -79,15 +99,49 @@ fn conf_text(exe: &Path, data: &Path, arguments: &[String], fragments: &[(&str, 
             "run-shell \"{interpreter}{data}/keys/{id}.tmux\"\n"
         ));
     }
+    if let Some(user_conf) = user_conf {
+        text.push_str(&format!("source-file -q \"{}\"\n", user_conf.display()));
+    }
     text
 }
 
-/// What a key fragment declares on top-level comment lines: `# keys: X Y` (prefix-table keys),
-/// `# unset: option …` and `# unhook: hook …`. `none` stands for "nothing". Several lines of one
-/// kind add up.
+/// The tmux option a key fragment reads its key from: `@tx-key-<plugin>-<action>`.
+fn key_option(plugin: &str, action: &str) -> String {
+    format!("{KEY_OPTION_PREFIX}{plugin}-{action}")
+}
+
+/// The key table (the `keys` setting, [`tx_core::keys`]) of the plugin whose fragment is `id`.
+fn key_table<'a>(core: &'a TxCore, id: &str) -> Option<&'a serde_json::Value> {
+    core.plugin_settings(id)?.get(keys::KEYS)
+}
+
+/// The key table of every published fragment's plugin as tmux options, fragment order: the key,
+/// or empty for an action the user unbound. Values were checked when the plugins loaded (no
+/// quote can break the single-quoted option value).
+fn key_options(core: &TxCore, fragments: &[(String, String)]) -> Vec<(String, String)> {
+    fragments
+        .iter()
+        .filter_map(|(id, _)| Some((id, key_table(core, id)?.as_object()?)))
+        .flat_map(|(id, table)| {
+            table.iter().map(move |(action, key)| {
+                (
+                    key_option(id, action),
+                    key.as_str().unwrap_or_default().to_owned(),
+                )
+            })
+        })
+        .collect()
+}
+
+/// What a key fragment declares on top-level comment lines: `# keys: action …` (the actions it
+/// binds in the prefix table), `# root-keys: action …` (in the root table), `# unset: option …`
+/// and `# unhook: hook …`. `none` stands for "nothing". Several lines of one kind add up.
+/// [`bound`] turns the actions into the tmux keys the plugin's settings give them, the form the
+/// record holds.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Declared {
     keys: Vec<String>,
+    root: Vec<String>,
     unset: Vec<String>,
     unhook: Vec<String>,
 }
@@ -97,6 +151,8 @@ fn parse_declarations(text: &str) -> Declared {
     for line in text.lines() {
         let (target, rest) = if let Some(rest) = line.strip_prefix("# keys:") {
             (&mut declared.keys, rest)
+        } else if let Some(rest) = line.strip_prefix("# root-keys:") {
+            (&mut declared.root, rest)
         } else if let Some(rest) = line.strip_prefix("# unset:") {
             (&mut declared.unset, rest)
         } else if let Some(rest) = line.strip_prefix("# unhook:") {
@@ -113,15 +169,78 @@ fn parse_declarations(text: &str) -> Declared {
     declared
 }
 
+/// `declared` with its actions replaced by the tmux keys `table` (the plugin's `keys` setting)
+/// binds them to: an unbound action has none, a modifier family nine. A plugin without a key table
+/// declares the tmux keys themselves, which stay as they are.
+fn bound(declared: Declared, table: Option<&serde_json::Value>) -> Declared {
+    if table.is_none() {
+        return declared;
+    }
+    let keys = |actions: Vec<String>| -> Vec<String> {
+        actions
+            .iter()
+            .filter_map(|action| table?.get(action)?.as_str())
+            .flat_map(keys::expand)
+            .collect()
+    };
+    Declared {
+        keys: keys(declared.keys),
+        root: keys(declared.root),
+        ..declared
+    }
+}
+
+/// The first tmux key two actions would bind in one table, as a message naming both settings:
+/// the later fragment would silently take the key from the earlier one. Spellings tmux reads as
+/// one key (`c-t`, `C-t`) are one key.
+fn key_collision(core: &TxCore, fragments: &[(String, String)]) -> Option<String> {
+    let mut taken: Vec<(&str, String, String)> = Vec::new();
+    for (id, text) in fragments {
+        let Some(table) = key_table(core, id) else {
+            continue;
+        };
+        let declared = parse_declarations(text);
+        for (key_table, actions) in [("prefix", &declared.keys), ("root", &declared.root)] {
+            for action in actions {
+                let Some(key) = table.get(action).and_then(serde_json::Value::as_str) else {
+                    continue;
+                };
+                let setting = format!("plugins.{id}.settings.{}.{action}", keys::KEYS);
+                for bound in keys::expand(key) {
+                    let spelling = keys::canonical(&bound);
+                    if let Some((_, _, other)) = taken
+                        .iter()
+                        .find(|(table, key, _)| *table == key_table && *key == spelling)
+                    {
+                        let pressed = if key_table == "prefix" {
+                            format!("prefix+{bound}")
+                        } else {
+                            bound
+                        };
+                        return Some(format!(
+                            "{pressed} is set for both {other} and {setting}: change one, or set \
+                             one to null"
+                        ));
+                    }
+                    taken.push((key_table, spelling, setting.clone()));
+                }
+            }
+        }
+    }
+    None
+}
+
 /// `<data>/keys/.installed`: one line per key fragment, tab-separated fields
-/// `<id>\tkeys=<k k…>\tunset=<o o…>\tunhook=<h h…>`; a group may be empty.
+/// `<id>\tkeys=<k k…>\troot=<k k…>\tunset=<o o…>\tunhook=<h h…>`, the keys as the settings bind
+/// them; a group may be empty, and a file from before `root=` existed reads as none.
 fn render_installed(entries: &[(String, Declared)]) -> String {
     entries
         .iter()
         .map(|(id, d)| {
             format!(
-                "{id}\tkeys={}\tunset={}\tunhook={}\n",
+                "{id}\tkeys={}\troot={}\tunset={}\tunhook={}\n",
                 d.keys.join(" "),
+                d.root.join(" "),
                 d.unset.join(" "),
                 d.unhook.join(" ")
             )
@@ -139,6 +258,8 @@ fn parse_installed(text: &str) -> Vec<(String, Declared)> {
                 let words = |rest: &str| rest.split_whitespace().map(str::to_owned).collect();
                 if let Some(rest) = field.strip_prefix("keys=") {
                     declared.keys = words(rest);
+                } else if let Some(rest) = field.strip_prefix("root=") {
+                    declared.root = words(rest);
                 } else if let Some(rest) = field.strip_prefix("unset=") {
                     declared.unset = words(rest);
                 } else if let Some(rest) = field.strip_prefix("unhook=") {
@@ -164,11 +285,14 @@ fn tmux_env_socket(env: Option<&str>) -> Option<&str> {
         .filter(|socket| !socket.is_empty())
 }
 
-/// Takes back, in a running server, what a key fragment declared: its prefix keys are unbound,
-/// its options and its hooks unset.
+/// Takes back, in a running server, what a key fragment declared: its prefix and root keys are
+/// unbound, its options and its hooks unset.
 fn take_back(ui: &Ui, declared: &Declared) {
     for key in &declared.keys {
-        ui.quiet(&["unbind", key]);
+        ui.quiet(&["unbind", "-T", "prefix", key]);
+    }
+    for key in &declared.root {
+        ui.quiet(&["unbind", "-T", "root", key]);
     }
     for option in &declared.unset {
         ui.quiet(&["set", "-gu", option]);
@@ -389,7 +513,8 @@ impl Updater for IdeUpdater {
 /// itself set, and loads that config; the record goes last, so a retire that failed half way is
 /// tried again by the next `tx update`. The server is then a plain core server to the updater:
 /// enabling the plugin again finds no trace of an unrecorded install. What the fragments set
-/// without declaring it (the theme, the root-table keys) stays until the server restarts.
+/// without declaring it (the theme, User0..8, the attach-to table) stays until the server
+/// restarts. The key options (`@tx-key-…`) go with the other options.
 fn retire(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
     let installed = core.config().directories.data.join(KEYS_INSTALLED);
     let entries = match std::fs::read_to_string(&installed) {
@@ -408,6 +533,9 @@ fn retire(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
         for option in CONF_OPTIONS {
             ui.quiet(&["set", "-gu", option]);
         }
+        for option in key_options_set(&ui) {
+            ui.quiet(&["set", "-gu", &option]);
+        }
         ui.quiet(&["set-environment", "-gu", TX_BIN_ENV]);
         ui.run(&["source-file", &conf.to_string_lossy()])
             .map_err(|e| VerbError::Failed(e.to_string()))?;
@@ -420,6 +548,17 @@ fn retire(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
         .map_err(|e| VerbError::Failed(format!("write: {e}")))
 }
 
+/// The key options ([`key_option`]) a running server holds.
+fn key_options_set(ui: &Ui) -> Vec<String> {
+    ui.quiet(&["show-options", "-g"])
+        .1
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|option| option.starts_with(KEY_OPTION_PREFIX))
+        .map(str::to_owned)
+        .collect()
+}
+
 fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
     // Canonical: the config holds one spelling of the binary, whatever way `tx` was invoked.
     let exe = tx_core::sdk::tx_bin()
@@ -428,8 +567,10 @@ fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
     let config = core.config();
     let data = &config.directories.data;
     let arguments = config.cli_arguments();
+    let user_conf = config.directories.config.join(tx_core::config::CONF_FILE);
     if let Some(path) = std::iter::once(exe.as_path())
         .chain(arguments.iter().map(Path::new))
+        .chain([user_conf.as_path()])
         .find(|path| is_unsafe_path(path))
     {
         return Err(VerbError::Failed(format!(
@@ -437,13 +578,24 @@ fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
             path.display()
         )));
     }
-    let previous = std::fs::read_to_string(data.join(KEYS_INSTALLED))
-        .ok()
-        .map(|text| parse_installed(&text));
     let texts = published_fragments(data)?;
+    if let Some(collision) = key_collision(core, &texts) {
+        return Err(VerbError::Failed(collision));
+    }
+    let installed_text = std::fs::read_to_string(data.join(KEYS_INSTALLED)).ok();
+    let previous = installed_text.as_deref().map(parse_installed);
+    // A record from before root keys were recorded cannot say which ones to unbind.
+    let records_root_keys = installed_text
+        .as_deref()
+        .is_none_or(|text| text.is_empty() || text.contains("\troot="));
     let fragments: Vec<(String, Declared)> = texts
         .iter()
-        .map(|(id, text)| (id.clone(), parse_declarations(text)))
+        .map(|(id, text)| {
+            (
+                id.clone(),
+                bound(parse_declarations(text), key_table(core, id)),
+            )
+        })
         .collect();
     let run_order: Vec<(&str, &str)> = texts
         .iter()
@@ -453,11 +605,19 @@ fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
     let ui = Ui::from_core(core);
     let server_running = ui.quiet(&["list-sessions"]).0;
     write_theme_files(core, known_polarity(&ui, data))?;
-    std::fs::write(&conf, conf_text(&exe, data, &arguments, &run_order))
-        .map_err(io_failed(&conf))?;
+    let text = conf_text(
+        &exe,
+        data,
+        &arguments,
+        &key_options(core, &texts),
+        &run_order,
+        (user_conf != conf).then_some(user_conf.as_path()),
+    );
+    std::fs::write(&conf, text).map_err(io_failed(&conf))?;
+    // Recorded before the reload: a reload that fails in the user's own file has still applied
+    // everything before it, and the next run must know what is bound.
     let installed = data.join(KEYS_INSTALLED);
-    let write_installed =
-        || std::fs::write(&installed, render_installed(&fragments)).map_err(io_failed(&installed));
+    std::fs::write(&installed, render_installed(&fragments)).map_err(io_failed(&installed))?;
 
     let mut out = format!("{}\n", conf.display());
     if server_running {
@@ -471,6 +631,7 @@ fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
                 &ui,
                 &Declared {
                     keys: dropped(&before.keys, now.map(|d| d.keys.as_slice())),
+                    root: dropped(&before.root, now.map(|d| d.root.as_slice())),
                     unset: dropped(&before.unset, now.map(|d| d.unset.as_slice())),
                     unhook: dropped(&before.unhook, now.map(|d| d.unhook.as_slice())),
                 },
@@ -478,14 +639,11 @@ fn install(core: &TxCore, io: &mut VerbIo<'_>) -> Result<(), VerbError> {
         }
         ui.run(&["source-file", &conf.to_string_lossy()])
             .map_err(|e| VerbError::Failed(e.to_string()))?;
-        write_installed()?;
         out.push_str("reloaded\n");
-        if previous.is_none() && legacy_conf_loaded {
+        if (previous.is_none() && legacy_conf_loaded) || !records_root_keys {
             out.push_str(LEGACY_HINT);
             out.push('\n');
         }
-    } else {
-        write_installed()?;
     }
     io.stdout
         .write_all(out.as_bytes())
@@ -640,10 +798,15 @@ mod tests {
                 Path::new("/s/data"),
                 &words(&["--data-dir", "/s/data", "--run-dir", "/r"]),
                 &[
+                    (key_option("kill", "kill"), "X".to_owned()),
+                    (key_option("labels", "sessions"), String::new()),
+                ],
+                &[
                     ("ide", "#!/usr/bin/env bash\n# keys: none\n"),
                     ("kill", "#!/bin/sh\n"),
                     ("labels", "# no interpreter line\n"),
-                ]
+                ],
+                Some(Path::new("/s/config/tmux.conf")),
             ),
             "# tx-core server config, written by `tx update`. Re-run to update.\n\
              set -s exit-empty on\n\
@@ -653,18 +816,33 @@ mod tests {
              set -g @tx-data \"/s/data\"\n\
              set -g @tx-arguments \"--data-dir /s/data --run-dir /r\"\n\
              set-environment -g TX_BIN \"/opt/tx\"\n\
+             set -g @tx-key-kill-kill 'X'\n\
+             set -g @tx-key-labels-sessions ''\n\
              source-file \"/s/data/conf/tmux.conf\"\n\
              source-file \"/s/data/conf/theme.tmux\"\n\
              run-shell \"/usr/bin/env bash /s/data/keys/ide.tmux\"\n\
              run-shell \"/bin/sh /s/data/keys/kill.tmux\"\n\
-             run-shell \"/s/data/keys/labels.tmux\"\n"
+             run-shell \"/s/data/keys/labels.tmux\"\n\
+             source-file -q \"/s/config/tmux.conf\"\n"
         );
+        assert!(
+            !conf_text(Path::new("/x"), Path::new("/d"), &[], &[], &[], None).contains("-q"),
+            "no user conf: the config directory is this file's own"
+        );
+        assert!(DEFAULT_TMUX_CONF.starts_with(TMUX_CONF_HEADER));
     }
 
     #[test]
     fn a_fragment_runs_through_the_interpreter_of_its_first_line() {
         let line = |text| {
-            let conf = conf_text(Path::new("/x"), Path::new("/d"), &[], &[("a", text)]);
+            let conf = conf_text(
+                Path::new("/x"),
+                Path::new("/d"),
+                &[],
+                &[],
+                &[("a", text)],
+                None,
+            );
             conf.lines().last().unwrap().to_owned()
         };
         assert_eq!(
@@ -710,12 +888,13 @@ mod tests {
 
     #[test]
     fn declarations_are_parsed_from_comment_lines() {
-        let text = "#!/usr/bin/env bash\n# keys: s\n# unset: a b\n# unhook: c\nset -u\n\
-                    echo '# keys: ignored'\n  # keys: indented is prose\n";
+        let text = "#!/usr/bin/env bash\n# keys: open\n# root-keys: up\n# unset: a b\n\
+                    # unhook: c\nset -u\necho '# keys: ignored'\n  # keys: indented is prose\n";
         assert_eq!(
             parse_declarations(text),
             Declared {
-                keys: words(&["s"]),
+                keys: words(&["open"]),
+                root: words(&["up"]),
                 unset: words(&["a", "b"]),
                 unhook: words(&["c"]),
             }
@@ -733,6 +912,27 @@ mod tests {
     }
 
     #[test]
+    fn declared_actions_bind_the_keys_of_the_settings() {
+        let table = serde_json::json!({"open": "p", "up": "C-k", "off": null, "pane": "M-"});
+        let declared = Declared {
+            keys: words(&["open", "up", "off"]),
+            root: words(&["up", "pane"]),
+            unset: words(&["a"]),
+            unhook: Vec::new(),
+        };
+        let bound = bound(declared, Some(&table));
+        assert_eq!(bound.keys, words(&["p", "C-k"]));
+        assert_eq!(bound.root[..2], words(&["C-k", "M-1"]));
+        assert_eq!(bound.root.len(), 10);
+        assert_eq!(bound.unset, words(&["a"]));
+        assert_eq!(
+            super::bound(parse_declarations("# keys: H\n"), None).keys,
+            words(&["H"]),
+            "without a key table the declared words are the keys"
+        );
+    }
+
+    #[test]
     fn installed_file_round_trips() {
         let entries = vec![
             ("ide".to_owned(), Declared::default()),
@@ -740,6 +940,7 @@ mod tests {
                 "labels".to_owned(),
                 Declared {
                     keys: words(&["s"]),
+                    root: Vec::new(),
                     unset: words(&["pane-border-format"]),
                     unhook: words(&["after-new-window"]),
                 },
@@ -748,6 +949,7 @@ mod tests {
                 "kill".to_owned(),
                 Declared {
                     keys: words(&["X", "C-x"]),
+                    root: words(&["C-k"]),
                     ..Declared::default()
                 },
             ),
@@ -755,11 +957,18 @@ mod tests {
         let text = render_installed(&entries);
         assert_eq!(
             text,
-            "ide\tkeys=\tunset=\tunhook=\n\
-             labels\tkeys=s\tunset=pane-border-format\tunhook=after-new-window\n\
-             kill\tkeys=X C-x\tunset=\tunhook=\n"
+            "ide\tkeys=\troot=\tunset=\tunhook=\n\
+             labels\tkeys=s\troot=\tunset=pane-border-format\tunhook=after-new-window\n\
+             kill\tkeys=X C-x\troot=C-k\tunset=\tunhook=\n"
         );
         assert_eq!(parse_installed(&text), entries);
+        assert_eq!(
+            parse_installed("labels\tkeys=s\tunset=x\tunhook=\n")[0]
+                .1
+                .root,
+            Vec::<String>::new(),
+            "a file from before root= has no root keys"
+        );
         assert!(parse_installed("").is_empty());
         assert!(parse_installed("\n\tkeys=a\n").is_empty());
     }

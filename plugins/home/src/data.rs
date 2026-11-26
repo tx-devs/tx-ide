@@ -18,9 +18,10 @@ use tx_core::{
 use crate::model::{AgentRow, AssistantState, Context, KeyHint, Project, ViewRow};
 use crate::project::ProjectCache;
 
-/// `# keys:` and the first prose comment of a key fragment, up to its first sentence; `None`
-/// when the fragment declares no key.
-pub fn key_hint(plugin: &str, text: &str) -> Option<KeyHint> {
+/// The prefix keys a key fragment binds (the actions on its `# keys:` lines, through the plugin's
+/// `keys` setting `table`; without one the words are the keys) and its first prose comment, up to
+/// the first sentence; `None` when it binds no prefix key.
+pub fn key_hint(plugin: &str, text: &str, table: Option<&serde_json::Value>) -> Option<KeyHint> {
     let mut keys = Vec::new();
     let mut prose: Vec<&str> = Vec::new();
     for line in text.lines() {
@@ -28,11 +29,15 @@ pub fn key_hint(plugin: &str, text: &str) -> Option<KeyHint> {
             keys.extend(
                 rest.split_whitespace()
                     .filter(|word| *word != "none")
+                    .filter_map(|action| match table {
+                        Some(table) => table.get(action)?.as_str(),
+                        None => Some(action),
+                    })
                     .map(str::to_owned),
             );
             continue;
         }
-        if ["#!", "# unset:", "# unhook:"]
+        if ["#!", "# root-keys:", "# unset:", "# unhook:"]
             .iter()
             .any(|prefix| line.starts_with(prefix))
         {
@@ -164,7 +169,12 @@ fn key_hints(core: &TxCore) -> Vec<KeyHint> {
         .filter(|(_, status)| *status == PluginStatus::Active)
         .filter_map(|(id, _)| {
             let fragment = std::fs::read_to_string(directory.join(format!("{id}.tmux"))).ok()?;
-            key_hint(id, &fragment)
+            key_hint(
+                id,
+                &fragment,
+                core.plugin_settings(id)
+                    .and_then(|settings| settings.get(tx_core::keys::KEYS)),
+            )
         })
         .collect()
 }
@@ -302,34 +312,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_fragment_hint_is_its_keys_and_first_sentence() {
-        let text = "#!/usr/bin/env bash\n# keys: t\n# tx key plugin `picker`: prefix+t opens the \
+    fn a_fragment_hint_is_its_configured_keys_and_first_sentence() {
+        let text = "#!/usr/bin/env bash\n# keys: open\n# tx key plugin `picker`: opens the \
                     tx session picker in a popup. `tx pick` finds the\n# pane to nest into.\n\
                     #\n# The popup is wide.\nset -u\n";
         assert_eq!(
-            key_hint("picker", text),
+            key_hint("picker", text, Some(&serde_json::json!({"open": "p"}))),
             Some(KeyHint {
                 plugin: "picker".into(),
-                keys: vec!["t".into()],
-                text: "prefix+t opens the tx session picker in a popup".into(),
+                keys: vec!["p".into()],
+                text: "opens the tx session picker in a popup".into(),
             })
         );
     }
 
     #[test]
     fn declarations_are_not_prose_and_several_keys_add_up() {
-        let text = "#!/usr/bin/env bash\n# keys: s\n# unset: pane-border-format\n\
-                    # unhook: after-new-window\n# keys: S\n# tx key plugin `labels`: prefix+s \
-                    lists sessions\n# with their tags\nset -u\n";
-        let hint = key_hint("labels", text).unwrap();
+        let text = "#!/usr/bin/env bash\n# keys: list\n# root-keys: up\n\
+                    # unset: pane-border-format\n# unhook: after-new-window\n# keys: other\n\
+                    # tx key plugin `labels`: lists sessions\n# with their tags\nset -u\n";
+        let table = serde_json::json!({"list": "s", "other": "S", "up": "C-k"});
+        let hint = key_hint("labels", text, Some(&table)).unwrap();
         assert_eq!(hint.keys, ["s", "S"]);
-        assert_eq!(hint.text, "prefix+s lists sessions with their tags");
+        assert_eq!(hint.text, "lists sessions with their tags");
     }
 
     #[test]
-    fn a_fragment_without_keys_has_no_hint() {
-        assert_eq!(key_hint("x", "#!/bin/sh\n# keys: none\n# words\n"), None);
-        assert_eq!(key_hint("x", "#!/bin/sh\n# words\n"), None);
+    fn a_fragment_without_bound_keys_has_no_hint() {
+        let unbound = serde_json::json!({"open": null});
+        assert_eq!(
+            key_hint("x", "#!/bin/sh\n# keys: open\n# words\n", Some(&unbound)),
+            None
+        );
+        assert_eq!(
+            key_hint("x", "#!/bin/sh\n# keys: none\n# words\n", None),
+            None
+        );
+        assert_eq!(key_hint("x", "#!/bin/sh\n# words\n", None), None);
     }
 
     #[test]
@@ -365,8 +384,19 @@ mod tests {
 
     #[test]
     fn the_shipped_fragment_has_a_hint() {
-        let hint = key_hint("home", include_str!("../keys/home.tmux")).unwrap();
+        let manifest: serde_json::Value =
+            serde_norway::from_str(include_str!("../plugin.yaml")).unwrap();
+        let hint = key_hint(
+            "home",
+            include_str!("../keys/home.tmux"),
+            manifest["settings"].get("keys"),
+        )
+        .unwrap();
         assert_eq!(hint.keys, ["m"]);
-        assert!(hint.text.starts_with("prefix+m opens"), "{}", hint.text);
+        assert!(
+            hint.text.starts_with("opens the tx-ide home"),
+            "{}",
+            hint.text
+        );
     }
 }

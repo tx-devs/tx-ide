@@ -4,7 +4,11 @@ description: "The tx-assistant agent session (`assistant warm`, `assistant ask`)
 tier: ide
 requires: [engine-claude]
 needs: [claude, git]
-settings: { model: opus, effort: 2 }
+settings:
+  model: opus                    # what the tx-assistant runs on
+  effort: 2                      # 1-5, or the engine's own word
+  keys:
+    ask: /                       # prefix+/: a line for the tx-assistant
 
 verbs:
   - name: assistant

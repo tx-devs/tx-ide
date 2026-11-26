@@ -5,6 +5,7 @@ use std::path::Path;
 
 use tx_client::tmux::Ui;
 use tx_core::host::bundle::KEYS_INSTALLED;
+use tx_core::keys;
 
 /// Who a bound key belongs to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,7 +57,7 @@ impl Bindings {
             .filter_map(parse_bind_line)
             .map(|(key, command)| {
                 let owner = owners
-                    .get(&key)
+                    .get(&keys::canonical(&key))
                     .map_or(Owner::Tmux, |id| Owner::Tx(id.clone()));
                 let note = notes.get(&key).cloned();
                 (
@@ -77,7 +78,9 @@ impl Bindings {
     }
 }
 
-/// `<data>/keys/.installed` (`<id>\tkeys=<k k…>\t…` per line) as key to plugin id.
+/// `<data>/keys/.installed` (`<id>\tkeys=<k k…>\t…` per line, the prefix keys as the plugins'
+/// settings bind them) as key to plugin id, each key in its one spelling ([`keys::canonical`]):
+/// a setting may spell a key otherwise than tmux lists it (`c-y` for `C-y`).
 fn installed_keys(text: &str) -> BTreeMap<String, String> {
     text.lines()
         .filter_map(|line| {
@@ -86,7 +89,7 @@ fn installed_keys(text: &str) -> BTreeMap<String, String> {
             let keys = fields.find_map(|field| field.strip_prefix("keys="))?;
             Some(
                 keys.split_whitespace()
-                    .map(|key| (key.to_owned(), id.to_owned()))
+                    .map(|key| (keys::canonical(key), id.to_owned()))
                     .collect::<Vec<_>>(),
             )
         })
@@ -159,9 +162,16 @@ mod tests {
 
     #[test]
     fn installed_keys_map_each_key_to_its_plugin() {
-        let owners =
-            installed_keys("ide\tkeys=C-h C-j\tunset=\tunhook=\nedit\tkeys=e\tunset=\tunhook=\n");
-        assert_eq!(owners.get("C-j").map(String::as_str), Some("ide"));
-        assert_eq!(owners.get("e").map(String::as_str), Some("edit"));
+        let owners = installed_keys(
+            "ide\tkeys=C-h c-j\troot=C-k\tunset=\tunhook=\nedit\tkeys=e\tunset=\tunhook=\n",
+        );
+        let owner = |key| owners.get(&keys::canonical(key)).map(String::as_str);
+        assert_eq!(
+            owner("C-j"),
+            Some("ide"),
+            "another spelling of the same key"
+        );
+        assert_eq!(owner("e"), Some("edit"));
+        assert_eq!(owner("C-k"), None, "a root key is not a prefix key");
     }
 }

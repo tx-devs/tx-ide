@@ -161,7 +161,7 @@ fn update_binds_prefix_m_only() {
         std::fs::read_to_string(cli.state().join("keys/.installed"))
             .unwrap()
             .lines()
-            .any(|line| line == "home\tkeys=m\tunset=\tunhook=")
+            .any(|line| line == "home\tkeys=m\troot=\tunset=\tunhook=")
     );
 
     cli.write_yaml("plugins:\n  assistant: { enabled: false }\n  home: { enabled: false }\n");
@@ -182,7 +182,7 @@ fn prefix_m_opens_the_home_popup_and_q_closes_it() {
     floor(&cli);
     assert!(cli.wait_for(5, || home_shown(&cli)), "{}", screen(&cli));
     let popup_shown = || screen(&cli).contains("q close");
-    press(&cli, &["C-a", "m"]);
+    press(&cli, &["C-b", "m"]);
     assert!(cli.wait_for(5, popup_shown), "no popup:\n{}", screen(&cli));
     press(&cli, &["q"]);
     assert!(

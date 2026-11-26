@@ -2,6 +2,9 @@ api: 1
 id: graph
 description: The agent graph (lineage and messages) in the terminal (ratatui).
 tier: ide
+settings:
+  keys:
+    open: g                      # prefix+g: the agent graph in a popup
 
 verbs:
   - name: graph

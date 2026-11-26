@@ -3,6 +3,9 @@ id: switch
 description: Prefix+P, switch plugins on and off without editing config.yaml.
 tier: ide
 requires: [ide]
+settings:
+  keys:
+    open: P                      # prefix+P: turn plugins on or off
 
 verbs:
   - name: switch

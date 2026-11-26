@@ -2,6 +2,9 @@ api: 1
 id: timeline
 description: Swimlanes of session activity in the terminal (ratatui), prefix+T.
 tier: ide
+settings:
+  keys:
+    open: T                      # prefix+T: the timeline in a popup
 
 verbs:
   - name: timeline

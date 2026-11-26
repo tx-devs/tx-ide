@@ -2,6 +2,9 @@ api: 1
 id: kill
 description: Prefix+X, confirm then `tx kill` the session in the active pane.
 tier: core
+settings:
+  keys:
+    kill: X                      # prefix+X: confirm, then close the agent or view in the active pane
 
 verbs:
   - name: kill

@@ -186,6 +186,11 @@ fn failed(error: impl std::fmt::Display) -> VerbError {
 }
 
 impl Nav<'_> {
+    /// How the status line names the key that opened the menu (`prefix+a`).
+    fn label(&self) -> String {
+        tx_core::keys::label(self.core, crate::PLUGIN_ID, "menu")
+    }
+
     /// The record of the session the key fired in; `None` is reported on the status line.
     fn record(&self, session: &str, client: &str) -> Option<Agent> {
         let record = self
@@ -194,7 +199,8 @@ impl Nav<'_> {
             .and_then(|id| self.core.get_agent(&id))
             .ok();
         if record.is_none() {
-            self.ui.display_status(client, "prefix+a: not a tx session");
+            self.ui
+                .display_status(client, &format!("{}: not a tx session", self.label()));
         }
         record
     }
@@ -258,7 +264,7 @@ impl Nav<'_> {
         );
         if let Err(error) = shown {
             self.ui
-                .display_status(client, &format!("prefix+a: {error}"));
+                .display_status(client, &format!("{}: {error}", self.label()));
             return Ok(1);
         }
         Ok(0)
@@ -289,7 +295,7 @@ impl Nav<'_> {
             Some(back) => self.go_back(client, &back),
             None => {
                 self.ui
-                    .display_status(client, "prefix+a: nothing to go back to");
+                    .display_status(client, &format!("{}: nothing to go back to", self.label()));
                 Ok(1)
             }
         }
@@ -436,7 +442,10 @@ impl Nav<'_> {
         let Some(verb) = self.core.verb(kind) else {
             self.ui.display_status(
                 client,
-                &format!("prefix+a: no opener for kind `{kind}` (expected verb `tx {kind} open`)"),
+                &format!(
+                    "{}: no opener for kind `{kind}` (expected verb `tx {kind} open`)",
+                    self.label()
+                ),
             );
             return Ok(None);
         };
@@ -454,14 +463,16 @@ impl Nav<'_> {
             Ok(code) => code,
             Err(error) => {
                 self.ui
-                    .display_status(client, &format!("prefix+a: {kind} open: {error}"));
+                    .display_status(client, &format!("{}: {kind} open: {error}", self.label()));
                 return Ok(None);
             }
         };
         if code != 0 {
             let reason = String::from_utf8_lossy(&stderr);
-            self.ui
-                .display_status(client, &format!("prefix+a: {kind} open: {}", reason.trim()));
+            self.ui.display_status(
+                client,
+                &format!("{}: {kind} open: {}", self.label(), reason.trim()),
+            );
             return Ok(None);
         }
         self.live_view(artifact_id)
@@ -489,7 +500,7 @@ impl Nav<'_> {
     ) -> Result<i32, VerbError> {
         let Some(view) = tx_client::views::get(&self.ui, name).map_err(failed)? else {
             self.ui
-                .display_status(client, &format!("prefix+a: {name} has ended"));
+                .display_status(client, &format!("{}: {name} has ended", self.label()));
             return Ok(1);
         };
         self.show(session, client, show, &view.into())
@@ -502,13 +513,17 @@ impl Nav<'_> {
             .ok()
             .and_then(|id| self.core.get_agent(&id).ok());
         let Some(target) = target else {
-            self.ui
-                .display_status(client, &format!("prefix+a: session {target_id} not found"));
+            self.ui.display_status(
+                client,
+                &format!("{}: session {target_id} not found", self.label()),
+            );
             return None;
         };
         if target.state == LlmEngineState::Ended || !self.ui.has_session(&target.name) {
-            self.ui
-                .display_status(client, &format!("prefix+a: {} has ended", target.name));
+            self.ui.display_status(
+                client,
+                &format!("{}: {} has ended", self.label(), target.name),
+            );
             return None;
         }
         Some(target)
@@ -524,8 +539,10 @@ impl Nav<'_> {
             return Ok(0);
         }
         let Some(pane) = tm::pane_hosting_client(&self.ui, client) else {
-            self.ui
-                .display_status(client, "prefix+a: this session is not hosted in a pane");
+            self.ui.display_status(
+                client,
+                &format!("{}: this session is not hosted in a pane", self.label()),
+            );
             return Ok(1);
         };
         let outcome = self.ui.attach_into(&pane, &target.name);
@@ -565,7 +582,7 @@ impl Nav<'_> {
             Ok(()) => 0,
             Err(reason) => {
                 self.ui
-                    .display_status(client, &format!("prefix+a: {name}: {reason}"));
+                    .display_status(client, &format!("{}: {name}: {reason}", self.label()));
                 1
             }
         }

@@ -4,6 +4,9 @@ description: "The tx-ide home (ratatui): projects, agents, views and history; th
 tier: ide
 requires: [ide]
 needs: [git]
+settings:
+  keys:
+    open: m                      # prefix+m: the home in a popup
 
 verbs:
   - name: home

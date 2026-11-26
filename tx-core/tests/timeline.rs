@@ -210,7 +210,7 @@ fn prefix_shift_t_opens_the_resident_popup_and_q_detaches() {
         args.extend_from_slice(keys);
         assert!(outer(&cli, &args).status.success());
     };
-    press(&["C-a", "T"]);
+    press(&["C-b", "T"]);
     assert!(
         settled(&["home", "tx-timeline"]),
         "the popup never attached the resident: {:?}",
@@ -243,7 +243,7 @@ fn prefix_shift_t_opens_the_resident_popup_and_q_detaches() {
         "the resident stays warm"
     );
 
-    press(&["C-a", "T"]);
+    press(&["C-b", "T"]);
     assert!(
         settled(&["home", "tx-timeline"]),
         "{:?}",

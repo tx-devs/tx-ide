@@ -165,9 +165,15 @@ impl Ui {
         if output.status.success() {
             return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
         }
+        // tmux reports an error in a sourced file on stdout (`<file>:<line>: <reason>`).
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
         Err(UiError::Failed {
             args: args.join(" "),
-            stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            stderr: if stderr.is_empty() {
+                String::from_utf8_lossy(&output.stdout).trim().to_owned()
+            } else {
+                stderr
+            },
         })
     }
 
