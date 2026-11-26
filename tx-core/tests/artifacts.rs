@@ -865,7 +865,7 @@ fn prefix_a_in_a_short_pane_opens_a_clamped_scrolling_picker() {
 
 /// Gate: an attach-to pick hands the terminal's keys to the `tx-attach-to` table, starting on
 /// the pane the firing client paints into; a session or view that is gone is reported, exit 1;
-/// focus is not a pick.
+/// focus (Enter) is a pick too.
 #[test]
 fn artifact_go_attach_to_starts_on_the_firing_pane() {
     require_tmux!();
@@ -912,13 +912,10 @@ fn artifact_go_attach_to_starts_on_the_firing_pane() {
         String::from_utf8_lossy(&output.stderr).contains("gone has ended"),
         "{output:?}"
     );
-    cli.fails(
-        &["_artifact-go", "a", &client, "focus", "artifact", &artifact],
-        2,
-    );
+    cli.ok(&["_artifact-go", "a", &client, "focus", "artifact", &artifact]);
 }
 
-/// Gate: a pick in popup mode nest-attaches the view in a popup over the outer terminal; the
+/// Gate: a popup pick nest-attaches the view in a popup over the outer terminal; the
 /// panes stay as they are.
 #[test]
 fn artifact_go_popup_nest_attaches_the_view() {

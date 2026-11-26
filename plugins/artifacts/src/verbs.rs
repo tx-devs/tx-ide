@@ -827,7 +827,7 @@ pub struct PickVerb {
     pub editor: Arc<str>,
 }
 
-/// `_artifact-go <session> <client> attach-to|popup artifact|session|view <id>`.
+/// `_artifact-go <session> <client> focus|attach-to|popup artifact|session|view <id>`.
 pub struct GoVerb {
     pub editor: Arc<str>,
 }
@@ -883,7 +883,7 @@ impl Verb for GoVerb {
     }
 
     fn usage(&self) -> &'static str {
-        "_artifact-go <session> <client> attach-to|popup artifact|session|view <id>   show a view (internal)"
+        "_artifact-go <session> <client> focus|attach-to|popup artifact|session|view <id>   show a view (internal)"
     }
 
     fn run(&self, core: &TxCore, io: &mut VerbIo<'_>, argv: &[String]) -> Result<i32, VerbError> {
@@ -891,14 +891,14 @@ impl Verb for GoVerb {
         let usage = |io: &mut VerbIo<'_>| {
             let _ = writeln!(
                 io.stderr,
-                "usage: tx {GO_VERB} <session> <client> attach-to|popup artifact|session|view <id>"
+                "usage: tx {GO_VERB} <session> <client> focus|attach-to|popup artifact|session|view <id>"
             );
             Ok(2)
         };
         let [session, client, show, kind, id] = words[..] else {
             return usage(io);
         };
-        let Some(show) = Show::parse(show).filter(|show| *show != Show::Focus) else {
+        let Some(show) = Show::parse(show) else {
             return usage(io);
         };
         let nav = nav(core, &self.editor);
