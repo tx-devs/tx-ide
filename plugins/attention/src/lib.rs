@@ -212,7 +212,7 @@ pub struct Attention;
 
 impl Attention {
     /// Shows the first marked agent the operator is not already looking at on `client`'s
-    /// terminal: the pane that shows it, else a popup.
+    /// terminal: the pane that shows it, else a full-screen popup.
     fn next(core: &TxCore, ui: &Ui, client: &str) -> Result<i32, VerbError> {
         let looked_at = marks::looked_at(ui);
         let next = current(core, ui)?
@@ -225,7 +225,8 @@ impl Attention {
         if mark.need == Need::Finished {
             marks::clear(ui, &mark.session);
         }
-        ui.show_session(client, Show::Focus, &mark.name, None)
+        // Only the pane already showing it: focus's fallback would switch the whole terminal.
+        ui.focus_session(client, &mark.name)
             .or_else(|_| ui.show_session(client, Show::Popup, &mark.name, None))
             .map_err(failed)?;
         Ok(0)

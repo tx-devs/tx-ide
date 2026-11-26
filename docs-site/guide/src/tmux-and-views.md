@@ -111,19 +111,24 @@ switches the current client to `home` instead.
 
 A plugin that lets the operator pick a session shows it through tx-client, either with
 `Ui::show_session(client, show, session, pane)` in-process or with
-`tx _show <client> focus|attach-to|popup <session> [<pane>]`. The timeline and prefix+a do;
-prefix+a titles its popup with `Ui::show_popup`.
+`tx _show <client> focus|attach-to|popup <session> [<pane>]`. Every list of agents does, with
+the same keys: Enter focuses, a attaches to, p pops up, in the picker (prefix+t), the timeline
+(prefix+T), the board (prefix+b) and prefix+a; the graph's Enter focuses too. prefix+a titles its
+popup with `Ui::show_popup`.
 
-- **focus** moves the terminal to the pane already showing the session.
+- **focus** moves the terminal to the pane already showing the session. When no pane it can
+  reach shows it, the session is nest-attached into `pane` if that is a shell of a view built to
+  host nested attaches (the home base, the tutor), else the terminal is switched to it.
 - **attach-to** lets the operator pick the pane. The `tx-attach-to` key table (in `keys/ide.tmux`)
   takes over the terminal's keys with the window's active border turned gold. h/j/k/l, the
   arrows, a pane number or a click select a pane, starting on `pane`. Enter attaches the session
   there (`tx _attach-into`, which never replaces an agent's own pane), and Esc or q cancel.
-- **popup** nest-attaches the session in a popup over the terminal.
+- **popup** nest-attaches the session in a popup covering the whole terminal.
 
 `client` may be a nested client: the terminal it is shown on is the one that moves. All three are
-safe to call from inside the caller's own popup. The popup waits in a background `run-shell` until
-the caller's popup is gone, because a client shows one popup at a time.
+safe to call from inside the caller's own popup. The popup is opened from a background
+`run-shell` that first closes the caller's popup, because a client shows one popup at a time and
+tmux silently drops a popup asked for while another is up.
 
 ## Keys
 
@@ -132,7 +137,7 @@ The prefix is `C-a`. Each key belongs to a plugin and disappears when that plugi
 | keys | does |
 |---|---|
 | prefix+m | the home screen in a popup (`home`) |
-| prefix+t | the session picker; Enter nests into the session (`picker`) |
+| prefix+t | the session picker; Enter focuses, a attaches to, p pops up (`picker`) |
 | prefix+n | new agent: the form, then the agent (`spawn`) |
 | prefix+e | edit the session's name, tags and group (`edit`) |
 | prefix+X | `tx kill` the agent or view in the pane, after a confirmation (`kill`) |

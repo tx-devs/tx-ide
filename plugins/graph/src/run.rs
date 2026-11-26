@@ -21,6 +21,7 @@ use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind,
 };
 use ratatui::crossterm::execute;
+use tx_client::show::Show;
 use tx_client::tmux::Ui;
 use tx_core::core::LOG_FILE;
 use tx_core::{Agent, LlmEngineState, TxCore};
@@ -39,8 +40,6 @@ pub const REFRESH: Duration = Duration::from_secs(1);
 /// Session option on the resident's tmux session: what to do once the popup closed,
 /// `focus <agent name>` or `artifacts <agent id>`.
 pub const AFTER_OPTION: &str = "@tx_graph_after";
-/// What a pane runs when it can take a nested attach: a shell, or a nested client already.
-const HOSTING_COMMANDS: [&str; 6] = ["zsh", "bash", "sh", "fish", "dash", "tmux"];
 
 /// What a live view reads from: core, the log it follows and the transcripts it follows.
 pub struct Feed<'a> {
@@ -113,48 +112,6 @@ pub fn brand() -> String {
 /// The source of one snapshot.
 pub fn source(core: &TxCore, now: f64, window: f64) -> io::Result<Source> {
     Feed::new(core).source(now, window)
-}
-
-/// Shows agent `name` on `client`'s terminal, as the picker opens a session: the pane already
-/// showing it, else a nested attach in `pane` (where prefix+g was pressed) when that pane is a
-/// shell of a view built to host nested attaches (the home base, the tutor), else the client
-/// switched to the agent's session. `Err` is the reason, for the operator.
-pub fn show_agent(tmux: &Ui, client: &str, pane: Option<&str>, name: &str) -> Result<(), String> {
-    // The client may be nested in a view's pane; the terminal is the one to move.
-    let terminal = || {
-        tmux.outer_client(client)
-            .map(|(client, _)| client)
-            .ok_or_else(|| "no terminal client to move".to_owned())
-    };
-    if let Some(shown) = tmux.pane_for_session(name, "") {
-        tmux.run(&["switch-client", "-c", &terminal()?, "-t", &shown])
-            .map_err(|error| error.to_string())?;
-        tmux.select_window(&shown);
-        tmux.select_pane(&shown);
-        return Ok(());
-    }
-    let target = format!("={name}");
-    if let Some(pane) = pane.filter(|pane| hosts_nested_attach(tmux, pane, name)) {
-        return tmux
-            .respawn_pane(pane, &tmux.nest_attach_command(&target))
-            .map_err(|error| error.to_string());
-    }
-    tmux.run(&["switch-client", "-c", &terminal()?, "-t", &target])
-        .map(drop)
-        .map_err(|error| error.to_string())
-}
-
-/// The picker's rule: `pane` takes a nested attach of `name` when its session is a view that
-/// hosts nested attaches, `name` is not such a view, and the pane runs a shell (or a nested
-/// client). Never an agent's own pane, never an editor.
-fn hosts_nested_attach(tmux: &Ui, pane: &str, name: &str) -> bool {
-    let hosting_view = tmux
-        .display_message("#S", Some(pane))
-        .is_some_and(|session| tmux.hosts_nested_attaches(&session));
-    let command = tmux.display_message("#{pane_current_command}", Some(pane));
-    hosting_view
-        && !tmux.hosts_nested_attaches(name)
-        && command.is_some_and(|command| HOSTING_COMMANDS.contains(&command.as_str()))
 }
 
 /// The agent's artifact menu on `client`, through `tx _artifact-menu`.
@@ -302,7 +259,7 @@ pub fn perform_after(
     after: &str,
 ) -> Result<(), String> {
     match after.split_once(' ') {
-        Some(("focus", name)) => show_agent(tmux, client, pane, name),
+        Some(("focus", name)) => tmux.show_session(client, Show::Focus, name, pane),
         Some(("artifacts", id)) => artifact_menu(tx, id, client),
         _ => Err(format!("unknown request {after:?}")),
     }

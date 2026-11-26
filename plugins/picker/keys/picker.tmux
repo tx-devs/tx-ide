@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # keys: t
-# tx key plugin `picker`: prefix+t opens the tx session picker in a popup. `tx pick` finds the
-# pane to nest into by asking tmux directly (`display-message -p #{pane_id}`), so the bind plumbs
-# nothing through. Run by `run-shell` from the server's tmux.conf, which `tx update` writes.
+# tx key plugin `picker`: prefix+t opens the tx session picker in a popup. `tx pick` finds its
+# client and the pane it was opened from by asking tmux directly (`display-message -p`), so the
+# bind plumbs nothing through. Run by `run-shell` from the server's tmux.conf, which `tx update` writes.
 # The picker's TAB roles panel runs in this popup's own terminal (fzf hands it over), since a
 # tmux popup cannot open inside another; its normal mode needs no tmux keys of its own.
 #

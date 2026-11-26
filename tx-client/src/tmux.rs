@@ -467,35 +467,6 @@ impl Ui {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         self.run(&args).map(drop)
     }
-
-    /// Nest-attaches `session` (an agent or a view) in a popup covering most of `client`'s
-    /// terminal. While it is open the session's status line shows `footer`, a plain dim hint; it
-    /// is hidden again when the popup closes.
-    pub fn popup_attach(
-        &self,
-        client: &str,
-        title: &str,
-        footer: &str,
-        session: &str,
-    ) -> Result<(), UiError> {
-        self.set_session_option(session, "status", "on")?;
-        self.set_session_option(session, "status-style", "bg=default,fg=default")?;
-        self.set_session_option(session, "status-format[0]", footer)?;
-        let command = popup_attach_command(&self.socket.to_string_lossy(), session);
-        let shown = self.display_popup(client, "90%", "90%", title, &command);
-        // The whole `status-format` array: unsetting only `[0]` leaves an empty local array
-        // that blanks the global status line.
-        for option in ["status", "status-style", "status-format"] {
-            self.quiet(&[
-                "set-option",
-                "-u",
-                "-t",
-                &exact_session_pane(session),
-                option,
-            ]);
-        }
-        shown
-    }
 }
 
 /// The argv of a `width`×`height` popup centred on `client`. Its border and colours are the

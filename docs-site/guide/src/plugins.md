@@ -174,11 +174,13 @@ same for the active pane after a confirmation, and refuses the `home` base.
 Tier `core`; its program is `tx-kill`.
 
 **`picker`**: `pick` is the fzf session picker on prefix+t: running agents and views in one list,
-newest activity first, with vim-style normal and search modes, a roles panel on TAB, Ctrl-T to tag
-and alt-p to open a pick in a popup. Enter nests the pick into the launching view's pane.
+newest activity first, with vim-style normal and search modes, a roles panel on TAB and Ctrl-T to
+tag. A pick is shown as a timeline lane is: Enter focuses it (the pane already showing it, else
+nested into the launching view's pane, else the terminal switched to it), a picks a pane to attach
+it into, p opens it in a full-screen popup (alt-a and alt-p while searching).
 Tier `ide` (it requires `ide` and needs `fzf`); its program is `tx-picker`. The picker's own verbs that fzf runs as children (the reload once a
-second, the key handler, the roles) run `tx-picker` directly, one process each, not through `tx`;
-`kill`, `_edit-tag` and the popup of alt-p start with `tx`.
+second, the Esc handler, the roles) run `tx-picker` directly, one process each, not through `tx`;
+`kill` and `_edit-tag` start with `tx`.
 
 **`edit`**: prefix+e opens a modal form for the session's name, tags and group (`ext.edit`).
 Tier `ide` (it requires `ide` and needs `fzf`); its program is `tx-edit`.
@@ -217,8 +219,8 @@ a `tour` by `tour`, run as that plugin's program where it is a bundle. `group` r
 session's effort group. prefix+a lists the artifacts an agent touched, plus its parent and
 children, in a popup that fits the pane it was pressed in (a pane too small for it gets the popup
 over the terminal). A row's key (`1`…`9`, `M-a`…) moves the cursor to it; then, as on a timeline
-lane, a (or Enter) picks a pane to attach its view into (attach-to, starting on that pane) and p
-opens it in a popup titled with its tags and owner. Tier `core`. Its verbs run as the program `tx-artifacts` (`plugins/artifacts/plugin.yaml`).
+lane, Enter focuses its view, a picks a pane to attach it into (attach-to, starting on that pane)
+and p opens it in a full-screen popup titled with its tags and owner. Tier `core`. Its verbs run as the program `tx-artifacts` (`plugins/artifacts/plugin.yaml`).
 
 **`tour`**: `tour create <stops.lua> --title T` registers a code tour as an artifact of kind
 `tour`; `tour open <id>` starts a `tour` view, nvim in the worktree walking the stops as
@@ -227,9 +229,10 @@ diagnostics and a quickfix list; `artifact open` and prefix+a run it for a tour.
 
 **`timeline`**: `timeline` draws swimlanes of session activity from the transcripts' turn
 markers; `timeline health` prints, per agent record, what the timeline can read for it; prefix+T opens a resident timeline view in a popup
-(q detaches, it stays warm). On a lane, as prefix+a: Enter focuses the pane showing its agent,
+(q detaches, it stays warm). On a lane, as in prefix+t and prefix+a: Enter focuses its agent,
 a picks a pane to attach the agent into (h/j/k/l, arrows, a pane number or a click, under a gold border, starting
-on the pane prefix+T was pressed in; Enter attaches, Esc cancels), p opens it in a popup.
+on the pane prefix+T was pressed in; Enter attaches, Esc cancels), p opens it in a full-screen
+popup.
 Tier `ide`. Its verbs run as the program `tx-timeline` (`plugins/timeline/plugin.yaml`).
 
 **`board`**: `board` draws the GitHub issue board of the checkout you are in, through `gh`. The

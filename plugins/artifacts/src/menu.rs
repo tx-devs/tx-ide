@@ -7,10 +7,10 @@
 //! popup over the pane running `_artifact-pick`: the artifacts the session touched, its parent,
 //! its live children. The popup fits inside the pane, scrolling a long list; a pane too small
 //! for any list gets it over the terminal instead. A pick is shown through tx-client's
-//! [`Ui::show_session`], as the timeline's are: a row's key moves the cursor to it, then a (or
-//! Enter) lets the operator pick the pane to attach the chosen view into, starting on the pane
-//! prefix+a fired in (attach-to); p nest-attaches it in a popup over the terminal, titled with its
-//! tags and owner.
+//! [`Ui::show_session`], as the timeline's are: a row's key moves the cursor to it, then Enter
+//! focuses the chosen view (else opens it from the pane prefix+a fired in), a lets the operator
+//! pick the pane to attach it into, starting on that pane (attach-to); p nest-attaches it in a
+//! full-screen popup, titled with its tags and owner.
 //! In an artifact's view (a tx-client view bound to it) the key goes back to the controlling
 //! session: the artifact's most recent live non-`user` toucher, else its creator, else the view's
 //! parent agent; in another view, to its parent agent.

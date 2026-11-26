@@ -1,9 +1,9 @@
 //! tx-core plugin `picker`: the fzf session picker (prefix+t). It lists the running agents and
 //! the views but the home base in one flat list, newest activity first, without the roles the
 //! TAB panel hides. `_list` is its feed (fzf re-runs it to reload), `pick` is the interactive
-//! loop with its vim normal and search modes, and `_picker-popup` shows a pick in a popup
-//! (`p` then Enter, or alt-p). `_picker-key`, `_roles`, `_toggle-hide` and `_roles-panel` serve
-//! the fzf binds. Port of main's `tx attach` without `--host`/`--all` and without the digit
+//! loop with its vim normal and search modes. A pick is shown as on every list of agents
+//! ([`Ui::show_session`]): Enter focuses it, `a` attaches it to a pane, `p` opens it in a popup.
+//! `_picker-key`, `_roles`, `_toggle-hide` and `_roles-panel` serve the fzf binds. Port of main's `tx attach` without `--host`/`--all` and without the digit
 //! picks. Publishes `keys/picker.tmux`.
 
 mod picker_filter;
@@ -23,14 +23,14 @@ use tx_core::{Agent, ListFilter, Plugin, PluginError, Registry, TxCore, Verb, Ve
 use tx_client::render::{
     BOLD, LOCATION_W, PickerEntry, RESET, ROLE_W, Row, listed, picker_namew, picker_rows, role_of,
 };
+use tx_client::show::Show;
 use tx_client::theme::{Role, active};
-use tx_client::tmux::{Ui, shell_quote};
+use tx_client::tmux::Ui;
 use tx_client::views::{self, View};
 
 use picker_filter::{chips_line, hidden_path, panel_legend, panel_rows, read_hidden};
 use picker_keys::{
-    DIGITS_FILE_ENV, KeyState, NORMAL_PROMPT, POPUP_LINE, POPUP_MARK, SEARCH_PROMPT, ignored_keys,
-    normal_footer, search_footer, toggle_normal_keys,
+    NORMAL_PROMPT, SEARCH_PROMPT, ignored_keys, normal_footer, search_footer, toggle_normal_keys,
 };
 
 pub const PLUGIN_ID: &str = "picker";
@@ -46,7 +46,6 @@ impl Plugin for PickerPlugin {
     fn register(&self, r: &mut Registry) -> Result<(), PluginError> {
         r.verb(Arc::new(List));
         r.verb(Arc::new(Pick));
-        r.verb(Arc::new(PickerPopup));
         r.verb(Arc::new(PickerKey));
         r.verb(Arc::new(Roles));
         r.verb(Arc::new(ToggleHide));
@@ -58,13 +57,9 @@ impl Plugin for PickerPlugin {
 const DEFAULT_NAMEW: i64 = 18;
 const DEFAULT_COLS: i64 = 80;
 const RETRY_PAUSE: Duration = Duration::from_millis(1200);
-/// Lets the picker's own popup close first: tmux drops a popup opened while another is up.
-const POPUP_DELAY: &str = "0.1";
-/// Foreground commands of a pane that may be replaced by a nested attach.
-const HOSTING_COMMANDS: [&str; 6] = ["zsh", "bash", "sh", "fish", "dash", "tmux"];
 
 const PICK_USAGE: &str = "\
-usage: tx pick [-f|--filter QUERY] [-j|--jump]
+usage: tx pick [-f|--filter QUERY]
 (--host and --all are not supported)
 ";
 
@@ -113,9 +108,10 @@ impl Binds {
 }
 
 /// The fzf argv, a port of main's `Attach::fzf_opts`: normal mode (`❯`) unless a query is
-/// given, search mode (`/`) then. `{1}`, `{2}`, `$TX_ARM_FILE`, `$TX_DIGITS_FILE` and
-/// `$FZF_PORT` stay literal for fzf and the shells it spawns; the two files reach them through
-/// the child's environment. `hidden` seeds the chips line.
+/// given, search mode (`/`) then. `{1}`, `{2}`, `$TX_ARM_FILE` and `$FZF_PORT` stay literal for
+/// fzf and the shells it spawns; the file reaches them through the child's environment. Enter,
+/// `a` and `p` (alt-a and alt-p while searching, where they type) print the name of their
+/// [`Show`] ahead of the selection. `hidden` seeds the chips line.
 ///
 /// Two command prefixes, each a program followed by the core's `cli_arguments()` (see
 /// `own_command` and `tx_command`): `own` runs the picker's own verbs (the reload, the key
@@ -135,7 +131,7 @@ pub fn fzf_args(
     let reload = format!("reload-sync({own} _list)");
     let edit_tag = format!("{tx} _edit-tag {{1}}");
     let chips = format!("{own} _roles --chips");
-    let picker_key = |key: &str| format!("transform({own} _picker-key {key})");
+    let show = |show: Show| format!("print({})+accept", show.name());
     let header_cols = format!(
         "{:<namew$}   {:<LOCATION_W$} {:<7} {:<6} {:<ROLE_W$} TAGS",
         "NAME", "LOCATION", "STARTED", "IDLE", "ROLE"
@@ -155,13 +151,12 @@ pub fn fzf_args(
     );
     let unbind_normal = toggle_normal_keys("unbind");
     let (prompt, start_mode, footer) = if query.is_empty() {
-        (NORMAL_PROMPT, String::new(), normal_footer(false))
+        (NORMAL_PROMPT, String::new(), normal_footer())
     } else {
         (SEARCH_PROMPT, format!("+{unbind_normal}"), search_footer())
     };
     let enter_search = format!(
-        "change-prompt({SEARCH_PROMPT})+{unbind_normal}+execute-silent(: >\"$TX_ARM_FILE\"; : \
-         >\"${DIGITS_FILE_ENV}\")+transform-header({focus_cmd})+change-footer:{}",
+        "change-prompt({SEARCH_PROMPT})+{unbind_normal}+execute-silent(: >\"$TX_ARM_FILE\")+transform-header({focus_cmd})+change-footer:{}",
         search_footer()
     );
     let mut args: Vec<String> = [
@@ -181,15 +176,17 @@ pub fn fzf_args(
         format!("--footer={footer}"),
         format!("--query={query}"),
         format!(
-            "--bind=start:execute-silent(( while sleep 1; do [ -s \"${DIGITS_FILE_ENV}\" ] || \
+            "--bind=start:execute-silent(( while sleep 1; do \
              curl -fsS -XPOST \"localhost:$FZF_PORT\" -d \"{reload}\" >/dev/null 2>&1 || exit 0; \
              done ) &){start_mode}"
         ),
         format!("--bind=ctrl-r:{reload}"),
         format!("--bind=r:{reload}"),
-        format!("--bind=p:{}", picker_key("p")),
-        // While searching, where `p` types: the row under the cursor, straight to a popup.
-        format!("--bind=alt-p:print({POPUP_LINE})+accept"),
+        format!("--bind=enter:{}", show(Show::Focus)),
+        format!("--bind=a:{}", show(Show::AttachTo)),
+        format!("--bind=alt-a:{}", show(Show::AttachTo)),
+        format!("--bind=p:{}", show(Show::Popup)),
+        format!("--bind=alt-p:{}", show(Show::Popup)),
         format!("--bind=focus:transform-header({focus_cmd})+execute-silent(: >\"$TX_ARM_FILE\")"),
         // The roles panel runs in the picker's own terminal (fzf hands it over for the
         // duration): a tmux popup cannot nest inside the prefix+t picker popup.
@@ -225,8 +222,7 @@ pub fn fzf_args(
         "--bind=ctrl-d:half-page-down,ctrl-u:half-page-up".to_owned(),
         format!("--bind=/:{enter_search}"),
         format!("--bind=i:{enter_search}"),
-        format!("--bind=esc:{}", picker_key("esc")),
-        format!("--bind=enter:{}", picker_key("enter")),
+        format!("--bind=esc:transform({own} _picker-key esc)"),
     ]);
     args.extend(
         ignored_keys()
@@ -319,26 +315,13 @@ impl Verb for List {
     }
 }
 
-struct PickOptions {
-    query: String,
-    jump: bool,
-}
-
-/// `None` is a usage error.
-fn parse_pick(argv: &[String]) -> Option<PickOptions> {
-    let mut options = PickOptions {
-        query: String::new(),
-        jump: false,
-    };
-    let mut args = argv.iter();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "-f" | "--filter" => options.query = args.next()?.clone(),
-            "-j" | "--jump" => options.jump = true,
-            _ => return None,
-        }
+/// `None` is a usage error; else the query.
+fn parse_pick(argv: &[String]) -> Option<String> {
+    match argv {
+        [] => Some(String::new()),
+        [flag, query] if flag == "-f" || flag == "--filter" => Some(query.clone()),
+        _ => None,
     }
-    Some(options)
 }
 
 pub struct Pick;
@@ -349,11 +332,11 @@ impl Verb for Pick {
     }
 
     fn usage(&self) -> &'static str {
-        "pick [-f QUERY] [-j]   fzf session picker (prefix+t)"
+        "pick [-f QUERY]   fzf session picker (prefix+t)"
     }
 
     fn run(&self, core: &TxCore, io: &mut VerbIo<'_>, argv: &[String]) -> Result<i32, VerbError> {
-        let Some(options) = parse_pick(argv) else {
+        let Some(query) = parse_pick(argv) else {
             let _ = write!(io.stderr, "{PICK_USAGE}");
             return Ok(2);
         };
@@ -369,168 +352,79 @@ impl Verb for Pick {
             .tempfile()
             .map_err(|e| VerbError::Failed(format!("arm file: {e}")))?
             .into_temp_path();
-        // Popup mode's pending-pick file (`_picker-key`); removed on drop.
-        let digits_file = tempfile::Builder::new()
-            .prefix("tx-picker-digits.")
-            .rand_bytes(8)
-            .tempfile()
-            .map_err(|e| VerbError::Failed(format!("pending-pick file: {e}")))?
-            .into_temp_path();
-        let files = PickerFiles {
-            arm: &arm_file,
-            digits: &digits_file,
-        };
         let hidden = read_hidden(&hidden_path(core)).map_err(hidden_failed)?;
         let args = fzf_args(
             &own_command(core)?,
             &tx_command(core),
             core.socket_path(),
             namew,
-            &options.query,
+            &query,
             &hidden,
             Binds::of(core),
         );
         loop {
             let text = Listing::gather(core, &ui)?.feed(&ui, namew);
-            let Some(output) = select(&args, namew, files, &text)? else {
+            let Some(output) = select(&args, namew, &arm_file, &text)? else {
                 return Ok(0);
             };
-            let (popup, selection) = split_popup(&output);
-            // A popup pick on an empty list prints only the popup line: nothing picked, as with Enter.
+            let (show, selection) = split_show(&output);
+            // A pick on an empty list prints only the show line: nothing picked.
             if selection.trim().is_empty() {
                 return Ok(0);
             }
-            let fields: Vec<&str> = selection.trim_end_matches('\n').split('\t').collect();
-            let name = fields[0];
-            let target = fields
-                .get(3)
-                .copied()
-                .filter(|target| !target.is_empty())
-                .unwrap_or(name);
+            let name = selection.split('\t').next().unwrap_or_default();
             if !ui.has_session(name) {
                 eprintln!("tx: session '{name}' does not exist");
-            } else if popup {
-                if open_popup(core, &ui, name)? {
-                    return Ok(0);
-                }
-                eprintln!("tx: a popup needs a tmux client");
-            } else if options.jump {
-                if jump(&ui, name, target)? {
-                    return Ok(0);
-                }
-                eprintln!("tx: could not jump to or switch to session {name}");
-            } else {
-                drop(arm_file);
-                drop(digits_file);
-                open(&ui, target, name)?;
-                return Ok(0);
+                std::thread::sleep(RETRY_PAUSE);
+                continue;
             }
-            std::thread::sleep(RETRY_PAUSE);
+            drop(arm_file);
+            return show_pick(&ui, show, name);
         }
     }
 }
 
-/// A popup pick's output is the popup line, then the selection.
-fn split_popup(output: &str) -> (bool, &str) {
-    match output
-        .strip_prefix(POPUP_LINE)
-        .and_then(|rest| rest.strip_prefix('\n'))
-    {
-        Some(selection) => (true, selection),
-        None if output.trim_end() == POPUP_LINE => (true, ""),
-        None => (false, output),
+/// fzf's output: the show line ahead of the selection. `--filter` (the tests) prints the
+/// selection alone, a focus.
+fn split_show(output: &str) -> (Show, &str) {
+    let (first, rest) = output.split_once('\n').unwrap_or((output, ""));
+    match Show::parse(first) {
+        Some(show) => (show, rest),
+        None => (Show::Focus, output),
     }
 }
 
-/// alt-p: a background `_picker-popup` nest-attaches `name` in a popup on this client once the
-/// picker's own popup has closed. False when there is no client to show it on.
-fn open_popup(core: &TxCore, ui: &Ui, name: &str) -> Result<bool, VerbError> {
-    let Some(client) = ui
-        .inside()
-        .then(|| ui.display_message("#{client_name}", None))
-        .flatten()
-    else {
-        return Ok(false);
-    };
-    // tmux runs this later, after the picker's popup has closed: it starts with `tx`.
-    let mut words = vec![shell_quote(&tx_core::sdk::tx_bin().to_string_lossy())];
-    words.extend(
-        core.config()
-            .cli_arguments()
-            .iter()
-            .map(|word| shell_quote(word)),
-    );
-    words.extend([POPUP_VERB, &client, name].map(shell_quote));
-    ui.run_shell_background(&format!("sleep {POPUP_DELAY}; {}", words.join(" ")))
-        .map_err(ui_failed)?;
-    Ok(true)
-}
-
-const POPUP_VERB: &str = "_picker-popup";
-
-/// `_picker-popup <client> <name>`: the agent or view `name` nest-attached in a popup over
-/// `client`'s terminal; detaching closes it and the session keeps running.
-pub struct PickerPopup;
-
-impl Verb for PickerPopup {
-    fn name(&self) -> &'static str {
-        POPUP_VERB
+/// Shows the pick on the terminal this picker runs on, from the pane it was opened in; outside
+/// tmux this terminal attaches it.
+fn show_pick(ui: &Ui, show: Show, name: &str) -> Result<i32, VerbError> {
+    if !ui.inside() {
+        let _ = std::io::stdout().flush();
+        return Err(ui_failed(ui.attach_exec(&format!("={name}"))));
     }
-
-    fn usage(&self) -> &'static str {
-        "_picker-popup <client> <name>   a picked session in a popup (alt-p, internal)"
-    }
-
-    fn run(&self, core: &TxCore, io: &mut VerbIo<'_>, argv: &[String]) -> Result<i32, VerbError> {
-        let [client, name] = argv else {
-            let _ = writeln!(io.stderr, "usage: tx {POPUP_VERB} <client> <name>");
-            return Ok(2);
-        };
-        let ui = Ui::from_core(core);
-        if !ui.has_session(name) {
-            ui.display_status(client, &format!("tx: session '{name}' does not exist"));
-            return Ok(1);
+    let client = ui
+        .display_message("#{client_name}", None)
+        .unwrap_or_default();
+    let pane = ui.current_pane_id();
+    match ui.show_session(&client, show, name, pane.as_deref()) {
+        Ok(()) => Ok(0),
+        Err(reason) => {
+            ui.display_status(&client, &format!("prefix+t: {name}: {reason}"));
+            Ok(1)
         }
-        let (_, prefix) = ui.quiet(&["show-options", "-gv", "prefix"]);
-        if let Err(error) = ui.popup_attach(
-            client,
-            &format!(" {name} "),
-            &popup_footer(prefix.trim()),
-            name,
-        ) {
-            ui.display_status(client, &format!("tx: {error}"));
-            return Ok(1);
-        }
-        Ok(0)
     }
-}
-
-fn popup_footer(prefix: &str) -> String {
-    let theme = active();
-    let text = theme.tmux_color(Role::Text);
-    let muted = theme.tmux_color(Role::Muted);
-    format!(" #[fg={text}]{prefix} d#[fg={muted}] closes the popup, the session keeps running")
-}
-
-/// The files the fzf binds share with the picker: the kill's arm, popup mode's pending pick.
-#[derive(Clone, Copy)]
-struct PickerFiles<'a> {
-    arm: &'a Path,
-    digits: &'a Path,
 }
 
 /// Run fzf once over `feed`; `None` on abort or an empty selection.
 fn select(
     args: &[String],
     namew: i64,
-    files: PickerFiles<'_>,
+    arm_file: &Path,
     feed: &str,
 ) -> Result<Option<String>, VerbError> {
     let mut child = Command::new(&args[0])
         .args(&args[1..])
         .env("NAMEW", namew.to_string())
-        .env("TX_ARM_FILE", files.arm)
-        .env(DIGITS_FILE_ENV, files.digits)
+        .env("TX_ARM_FILE", arm_file)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -585,8 +479,8 @@ fn tx_command(core: &TxCore) -> String {
     )
 }
 
-/// `_picker-key <key>`: the normal-mode handler for esc, enter and p. Reads and rewrites the
-/// pending-pick file, prints the fzf actions for `transform(...)`.
+/// `_picker-key esc`: back to normal mode while searching, else close; prints the fzf actions
+/// for `transform(...)`.
 pub struct PickerKey;
 
 impl Verb for PickerKey {
@@ -595,31 +489,20 @@ impl Verb for PickerKey {
     }
 
     fn usage(&self) -> &'static str {
-        "_picker-key <esc|enter|p>   the picker's normal-mode key handler (internal)"
+        "_picker-key esc   the picker's Esc handler (internal)"
     }
 
     fn run(&self, _core: &TxCore, io: &mut VerbIo<'_>, argv: &[String]) -> Result<i32, VerbError> {
-        let Some(path) = std::env::var_os(DIGITS_FILE_ENV).filter(|path| !path.is_empty()) else {
-            let _ = writeln!(
-                io.stderr,
-                "tx _picker-key: {DIGITS_FILE_ENV} is not set (run from the picker)"
-            );
+        let [key] = argv else {
+            let _ = writeln!(io.stderr, "usage: tx {}", self.usage());
             return Ok(2);
         };
-        let key = argv.first().map(String::as_str).unwrap_or_default();
-        let pending = std::fs::read_to_string(&path)
-            .map_err(|e| VerbError::Failed(format!("pending-pick file: {e}")))?;
-        let state = KeyState {
-            searching: std::env::var("FZF_PROMPT").is_ok_and(|prompt| prompt == SEARCH_PROMPT),
-            popup: pending.trim() == POPUP_MARK,
-        };
-        let Some(reply) = picker_keys::press(key, &state) else {
+        if key != "esc" {
             let _ = writeln!(io.stderr, "tx _picker-key: unknown key '{key}'");
             return Ok(2);
-        };
-        std::fs::write(&path, reply.pending())
-            .map_err(|e| VerbError::Failed(format!("pending-pick file: {e}")))?;
-        writeln!(io.stdout, "{}", reply.actions)
+        }
+        let searching = std::env::var("FZF_PROMPT").is_ok_and(|prompt| prompt == SEARCH_PROMPT);
+        writeln!(io.stdout, "{}", picker_keys::esc(searching))
             .map_err(|e| VerbError::Failed(format!("write: {e}")))?;
         Ok(0)
     }
@@ -741,100 +624,6 @@ impl Verb for RolesPanel {
     }
 }
 
-/// How Enter on a picker row opens the session.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum OpenMode {
-    /// Respawn the launching view's shell pane into a nested attach.
-    Nest,
-    /// Switch the client that launched the picker.
-    Switch,
-    /// Attach this terminal.
-    Attach,
-}
-
-/// `current_hosts`: the launching session is a view whose shell panes host nested attaches
-/// (the home base, the tutor); from any other session the client is switched. `target_hosts`:
-/// the picked session is such a view itself, which is switched to, never nested into a pane.
-fn open_mode(
-    inside: bool,
-    current_hosts: bool,
-    target_hosts: bool,
-    pane_command: Option<&str>,
-) -> OpenMode {
-    if !inside {
-        return OpenMode::Attach;
-    }
-    if current_hosts
-        && !target_hosts
-        && pane_command.is_some_and(|command| HOSTING_COMMANDS.contains(&command))
-    {
-        OpenMode::Nest
-    } else {
-        OpenMode::Switch
-    }
-}
-
-/// The open mode for the caller's surroundings and the picked `name`, with the pane to nest
-/// into.
-fn open_mode_here(ui: &Ui, name: &str) -> (OpenMode, Option<String>) {
-    let inside = ui.inside();
-    let pane = inside.then(|| ui.current_pane_id()).flatten();
-    let current_hosts = pane.is_some()
-        && ui
-            .current_session_name()
-            .is_some_and(|session| ui.hosts_nested_attaches(&session));
-    let command = pane
-        .as_deref()
-        .and_then(|pane| ui.display_message("#{pane_current_command}", Some(pane)));
-    let mode = open_mode(
-        inside,
-        current_hosts,
-        ui.hosts_nested_attaches(name),
-        command.as_deref(),
-    );
-    (mode, pane)
-}
-
-/// Default path: nest into the launching view's shell pane, else switch the client, else
-/// attach this terminal.
-fn open(ui: &Ui, target: &str, name: &str) -> Result<(), VerbError> {
-    match open_mode_here(ui, name) {
-        (OpenMode::Nest, Some(pane)) => nest(ui, &pane, target)?,
-        (OpenMode::Attach, _) => {
-            let _ = std::io::stdout().flush();
-            return Err(ui_failed(ui.attach_exec(target)));
-        }
-        _ => {
-            let _ = ui.switch_client(name);
-        }
-    }
-    Ok(())
-}
-
-/// `--jump`: focus the pane already hosting the session, else nest, else switch. False when
-/// none of those worked.
-fn jump(ui: &Ui, name: &str, target: &str) -> Result<bool, VerbError> {
-    let current = ui.current_session_name().unwrap_or_default();
-    if current == name {
-        return Ok(true);
-    }
-    if let Some(pane) = ui.pane_for_session(name, &current)
-        && pane.split(':').next() == Some(current.as_str())
-    {
-        return Ok(ui.select_window(&pane) && ui.select_pane(&pane));
-    }
-    if let (OpenMode::Nest, Some(pane)) = open_mode_here(ui, name) {
-        nest(ui, &pane, target)?;
-        return Ok(true);
-    }
-    Ok(ui.switch_client(name).is_ok())
-}
-
-fn nest(ui: &Ui, pane: &str, target: &str) -> Result<(), VerbError> {
-    ui.respawn_pane(pane, &ui.nest_attach_command(target))
-        .map_err(ui_failed)
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -895,7 +684,7 @@ mod tests {
         );
         let unbind = toggle_normal_keys("unbind");
         let search = format!(
-            "change-prompt(  / )+{unbind}+execute-silent(: >\"$TX_ARM_FILE\"; : >\"$TX_DIGITS_FILE\")+transform-header({focus})+change-footer:{}",
+            "change-prompt(  / )+{unbind}+execute-silent(: >\"$TX_ARM_FILE\")+transform-header({focus})+change-footer:{}",
             search_footer()
         );
         let mut expected: Vec<String> = vec![
@@ -912,14 +701,17 @@ mod tests {
             "--with-shell=sh -c".into(),
             theme.fzf_color_arg(false),
             format!("--header={}\n{HEADER}", chips_line(&["shell"])),
-            format!("--footer={}", normal_footer(false)),
+            format!("--footer={}", normal_footer()),
             "--query=".into(),
             format!(
-                "--bind=start:execute-silent(( while sleep 1; do [ -s \"$TX_DIGITS_FILE\" ] || curl -fsS -XPOST \"localhost:$FZF_PORT\" -d \"{reload}\" >/dev/null 2>&1 || exit 0; done ) &)"
+                "--bind=start:execute-silent(( while sleep 1; do curl -fsS -XPOST \"localhost:$FZF_PORT\" -d \"{reload}\" >/dev/null 2>&1 || exit 0; done ) &)"
             ),
             format!("--bind=ctrl-r:{reload}"),
             format!("--bind=r:{reload}"),
-            format!("--bind=p:transform({own} _picker-key p)"),
+            "--bind=enter:print(focus)+accept".into(),
+            "--bind=a:print(attach-to)+accept".into(),
+            "--bind=alt-a:print(attach-to)+accept".into(),
+            "--bind=p:print(popup)+accept".into(),
             "--bind=alt-p:print(popup)+accept".into(),
             format!("--bind=focus:transform-header({focus})+execute-silent(: >\"$TX_ARM_FILE\")"),
             format!("--bind=tab:execute({own} _roles-panel)+{reload}+transform-header({focus})"),
@@ -944,7 +736,6 @@ mod tests {
             format!("--bind=/:{search}"),
             format!("--bind=i:{search}"),
             format!("--bind=esc:transform({own} _picker-key esc)"),
-            format!("--bind=enter:transform({own} _picker-key enter)"),
         ];
         expected.extend(
             ignored_keys()
@@ -1013,53 +804,19 @@ mod tests {
     }
 
     #[test]
-    fn open_mode_by_surroundings() {
-        for command in [Some("zsh"), Some("tx"), None] {
-            for target_hosts in [false, true] {
-                assert_eq!(
-                    open_mode(false, true, target_hosts, command),
-                    OpenMode::Attach
-                );
-                assert_eq!(
-                    open_mode(false, false, target_hosts, command),
-                    OpenMode::Attach
-                );
-            }
-        }
-        for shell in HOSTING_COMMANDS {
-            assert_eq!(
-                open_mode(true, true, false, Some(shell)),
-                OpenMode::Nest,
-                "{shell}"
-            );
-            // A home base or tutor picked from a home base is switched to, never nested.
-            assert_eq!(
-                open_mode(true, true, true, Some(shell)),
-                OpenMode::Switch,
-                "{shell}"
-            );
-        }
-        assert_eq!(open_mode(true, false, false, Some("zsh")), OpenMode::Switch);
-        assert_eq!(open_mode(true, true, false, Some("nvim")), OpenMode::Switch);
-        assert_eq!(open_mode(true, true, false, Some("tx")), OpenMode::Switch);
-        assert_eq!(open_mode(true, true, false, None), OpenMode::Switch);
-        assert_eq!(open_mode(true, false, false, None), OpenMode::Switch);
-    }
-
-    #[test]
-    fn alt_p_output_is_split_from_the_selection() {
+    fn the_show_line_is_split_from_the_selection() {
         let row = "sh\t\tL\t$4\tsh\n";
-        assert_eq!(split_popup(&format!("popup\n{row}")), (true, row));
-        assert_eq!(split_popup(row), (false, row));
-        assert_eq!(split_popup("popup\n"), (true, ""));
-        assert_eq!(split_popup("popup"), (true, ""));
-        // A session named `popup` picked with Enter is a plain pick.
+        assert_eq!(split_show(&format!("popup\n{row}")), (Show::Popup, row));
+        assert_eq!(
+            split_show(&format!("attach-to\n{row}")),
+            (Show::AttachTo, row)
+        );
+        assert_eq!(split_show(&format!("focus\n{row}")), (Show::Focus, row));
+        assert_eq!(split_show(row), (Show::Focus, row));
+        assert_eq!(split_show("popup\n"), (Show::Popup, ""));
+        assert_eq!(split_show("popup"), (Show::Popup, ""));
+        // A session named `popup`, as `--filter` prints it, is a focus.
         let named = "popup\t\tL\t$1\tpopup\n";
-        assert_eq!(split_popup(named), (false, named));
-    }
-
-    #[test]
-    fn the_popup_footer_names_the_prefix() {
-        assert!(popup_footer("C-a").contains("C-a d"));
+        assert_eq!(split_show(named), (Show::Focus, named));
     }
 }
