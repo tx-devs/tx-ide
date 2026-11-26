@@ -4,6 +4,7 @@
 
 mod args;
 mod check;
+mod config_view;
 mod gc;
 mod harness;
 mod plugins;

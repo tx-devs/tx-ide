@@ -1,13 +1,14 @@
 //! `tx setup`: which of the shipped plugins an install takes. It resolves a preset, a list or
 //! the wizard's ticks against a directory of bundles, records the result in
-//! `<data>/shipped/.selection` for `tx update` to lay out, seeds `config.yaml` when there is
-//! none, and prints the result for the installer.
+//! `<data>/shipped/.selection` for `tx update` to lay out, and prints the result for the
+//! installer. It writes nothing under the config directory: `config.yaml` is the user's, and the
+//! defaults (the core's own, and the `settings` of each plugin's manifest) are read where they
+//! ship.
 //!
 //! The program opens no core: it only resolves the directories, as every program of tx does.
 //! So `tx-setup …` run from a build and `tx setup …` are the same command line.
 
 mod presets;
-mod seed;
 mod wizard;
 
 use std::collections::BTreeSet;
@@ -260,18 +261,6 @@ fn run(arguments: &[String]) -> Result<ExitCode, Failure> {
     .map_err(Failure::Failed)?;
 
     choice.selection.write(&shipped).map_err(failed)?;
-    if arguments.mode != Mode::Upgrade {
-        let file = directories
-            .config
-            .join(tx_core::host::user_config::FILE_NAME);
-        let selected = choice
-            .selection
-            .plugins
-            .iter()
-            .map(|id| &bundles.manifests[id]);
-        seed::write(&file, &seed::text(selected))
-            .map_err(|error| failed(format!("{}: {error}", file.display())))?;
-    }
     for id in &choice.selection.plugins {
         println!("plugin\t{id}");
     }

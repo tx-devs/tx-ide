@@ -284,6 +284,40 @@ pub struct Entry {
     pub settings: Value,
 }
 
+/// `entries` as the plugins are to be run: the settings of every installed plugin's manifest are
+/// its defaults, and the config's own are laid over them key by key
+/// ([`crate::plugin::merge_settings`]). So a plugin the config does not name still gets its
+/// defaults, and a default the manifest changes reaches every key the config left alone. The
+/// config's `keys` of an enabled plugin are checked against the manifest's first
+/// ([`crate::keys::check`]).
+pub fn entries_with_defaults(
+    index: &Index,
+    mut entries: BTreeMap<String, Entry>,
+) -> Result<BTreeMap<String, Entry>, crate::PluginError> {
+    for installed in &index.plugins {
+        let Ok(manifest) = &installed.manifest else {
+            continue;
+        };
+        let given = entries.get(&installed.id);
+        if let Some(entry) = given.filter(|entry| entry.enabled && !entry.settings.is_null()) {
+            crate::keys::check(&installed.id, &manifest.settings, &entry.settings)?;
+        }
+        if manifest.settings.is_null() {
+            continue;
+        }
+        let entry = entries.entry(installed.id.clone()).or_insert(Entry {
+            enabled: true,
+            settings: Value::Null,
+        });
+        let mut settings = manifest.settings.clone();
+        if !entry.settings.is_null() {
+            crate::plugin::merge_settings(&mut settings, std::mem::take(&mut entry.settings));
+        }
+        entry.settings = settings;
+    }
+    Ok(entries)
+}
+
 /// One plugin as this run sees it: an installed one, or an entry of the config that names no
 /// installed plugin.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -944,6 +978,72 @@ mod tests {
             Some("api 2 is not supported (this tx: 1)")
         );
         assert_eq!(activation.detail(&activation.plugins[0]), None);
+    }
+
+    /// A manifest's `settings` are the plugin's defaults: a plugin the config does not name
+    /// gets them, a config entry is laid over them key by key, and a `null` replaces.
+    #[test]
+    fn a_manifests_settings_are_the_defaults_the_configs_are_laid_over() {
+        let sandbox = Sandbox::new();
+        let settings = "settings:\n  model: opus\n  effort: 2\n  keys: { ask: / }\n";
+        for id in ["named", "plain", "off"] {
+            sandbox.manifest(
+                "user",
+                id,
+                &format!("api: 1\nid: {id}\ndescription: The {id} plugin.\n{settings}"),
+            );
+        }
+        sandbox.plugin("user", "bare", &[]);
+        let index = sandbox.load();
+        let given = entries(&[
+            (
+                "named",
+                true,
+                serde_json::json!({"effort": 4, "model": null, "keys": {"ask": "a"}}),
+            ),
+            // A disabled plugin's settings are not checked: its keys are never bound.
+            ("off", false, serde_json::json!({"keys": {"nope": 1}})),
+            ("gone", true, serde_json::json!({"anything": 1})),
+        ]);
+        let merged = entries_with_defaults(&index, given).unwrap();
+        assert_eq!(
+            merged["named"].settings,
+            serde_json::json!({"model": null, "effort": 4, "keys": {"ask": "a"}})
+        );
+        assert_eq!(
+            merged["plain"],
+            Entry {
+                enabled: true,
+                settings: serde_json::json!({"model": "opus", "effort": 2, "keys": {"ask": "/"}}),
+            }
+        );
+        assert!(!merged["off"].enabled);
+        assert!(!merged.contains_key("bare"), "no settings, no entry");
+        assert_eq!(merged["gone"].settings, serde_json::json!({"anything": 1}));
+
+        for (bad, names) in [
+            (serde_json::json!({"keys": {"aks": "a"}}), "keys.aks"),
+            (
+                serde_json::json!({"keys": {"ask": "two words"}}),
+                "keys.ask",
+            ),
+        ] {
+            let error = entries_with_defaults(&index, entries(&[("named", true, bad)]))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("named") && error.contains(names), "{error}");
+        }
+        // A plugin without a key table has no action to move.
+        let error = entries_with_defaults(
+            &index,
+            entries(&[("bare", true, serde_json::json!({"keys": {"open": "t"}}))]),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("bare") && error.contains("keys.open"),
+            "{error}"
+        );
     }
 
     #[test]

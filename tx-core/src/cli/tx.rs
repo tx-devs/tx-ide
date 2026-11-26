@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::{Command, ExitCode};
 
 use crate::cli::args::{self, HarnessKind, Invocation, Verb};
+use crate::cli::config_view;
 use crate::cli::harness::Engines;
 use crate::host::args::{Global, UsageError};
 use crate::plugin::Index;
@@ -147,6 +148,43 @@ fn plugins(global: &Global, json: bool) -> Result<ExitCode, Failure> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// `tx config [--defaults|--path]`: the config as tx reads it. The config file, the index and
+/// the manifests say it all, so no core is opened and nothing is written.
+fn config(global: &Global, view: args::ConfigView) -> Result<ExitCode, Failure> {
+    let core = core_config(global)?;
+    let path = config_file(global, &core);
+    if view == args::ConfigView::Path {
+        println!("{}", path.display());
+        return Ok(ExitCode::SUCCESS);
+    }
+    // What every other verb reads first: the file parses, and its key settings name keys. So a
+    // file `tx config` shows is one tx accepts.
+    let installation = Installation::read_with(global, core)?;
+    let defaults = config_view::defaults_text(&installation.index);
+    let text = match view {
+        args::ConfigView::Defaults => defaults,
+        _ => {
+            let user = match std::fs::read_to_string(&path) {
+                Ok(text) => config_view::value(&text, &path).map_err(Failure::Usage)?,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    serde_json::Value::Null
+                }
+                Err(error) => {
+                    return Err(Failure::Usage(UsageError(format!(
+                        "{}: {error}",
+                        path.display()
+                    ))));
+                }
+            };
+            let defaults = config_view::value(&defaults, Path::new("the built-in defaults"))
+                .map_err(Failure::Usage)?;
+            config_view::effective_text(&defaults, user, &path)
+        }
+    };
+    print!("{text}");
+    Ok(ExitCode::SUCCESS)
+}
+
 /// `tx harness check`: the harness, the plugins, or one of the two. Neither opens a core, and
 /// nothing is written, the plugin index included.
 fn harness_check(
@@ -251,6 +289,7 @@ fn run(invocation: Invocation) -> Result<ExitCode, Failure> {
         }
         Verb::Plugin { name, argv } => return plugin_verb(&invocation.global, name, argv),
         Verb::Plugins { json } => return plugins(&invocation.global, *json),
+        Verb::Config { view } => return config(&invocation.global, *view),
         _ => {}
     }
     let config = core_config(&invocation.global)?;
@@ -301,6 +340,7 @@ fn built_in(core: &TxCore, invocation: Invocation) -> Result<ExitCode, Failure> 
         | Verb::Update { .. }
         | Verb::Plugin { .. }
         | Verb::Plugins { .. }
+        | Verb::Config { .. }
         | Verb::HarnessList { .. }
         | Verb::HarnessCheck { .. } => {
             unreachable!()

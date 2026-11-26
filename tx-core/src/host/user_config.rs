@@ -14,7 +14,10 @@
 //!   assistant:
 //!     settings: { model: opus, effort: 2 }
 //! ```
-//! Every key is optional; a missing or empty file is every default. An unknown key, a bad value
+//! Every key is optional, and the file holds only what the user changes: a missing or empty
+//! file is every default. The defaults are never written into it: the core's are in
+//! `defaults.yaml`, a plugin's are the `settings` of its manifest, and the user's `settings` are
+//! laid over those key by key (`tx config` prints the result). An unknown key, a bad value
 //! or malformed YAML is a usage error naming the file.
 //!
 //! In `plugins:`, no entry enables a plugin. An entry that names no plugin is ignored at run
@@ -203,8 +206,10 @@ pub const RETIRED: &[&str] = &["hooks", "history", "menu"];
 pub struct Entry {
     #[serde(default = "yes")]
     enabled: bool,
+    /// A mapping, laid over the settings of the plugin's manifest key by key; anything else is
+    /// refused.
     #[serde(default)]
-    settings: Option<serde_json::Value>,
+    settings: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 fn yes() -> bool {
@@ -219,7 +224,10 @@ pub fn entries(plugins: &BTreeMap<String, Entry>) -> BTreeMap<String, crate::plu
         .map(|(id, entry)| {
             let entry = crate::plugin::Entry {
                 enabled: entry.enabled,
-                settings: entry.settings.clone().unwrap_or_default(),
+                settings: entry
+                    .settings
+                    .clone()
+                    .map_or(serde_json::Value::Null, serde_json::Value::Object),
             };
             (id.clone(), entry)
         })
@@ -230,19 +238,6 @@ pub fn entries(plugins: &BTreeMap<String, Entry>) -> BTreeMap<String, crate::plu
 mod tests {
     use super::*;
     use crate::EngineKind;
-
-    /// The repository's file spells out exactly the built-in defaults of `agent` and `worktree`,
-    /// as a missing file has them. It lists no plugin: `tx setup` adds the selected ones when it
-    /// seeds the file.
-    #[test]
-    fn the_installed_file_is_the_built_in_defaults() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../config/tx-ide/config.yaml");
-        let config = load(&path).unwrap();
-        assert_eq!(config.agent, AgentDefaults::default());
-        assert_eq!(config.worktree, WorktreeSettings::default());
-        assert_eq!(config.theme, ThemeSettings::default());
-        assert!(config.plugins.is_empty(), "{:?}", config.plugins);
-    }
 
     #[test]
     fn theme_accepts_a_name_or_a_table() {

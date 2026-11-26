@@ -18,6 +18,7 @@ pub mod harness;
 /// Internal; no stability promise for plugin authors.
 #[doc(hidden)]
 pub mod host;
+pub mod keys;
 /// Internal; no stability promise for plugin authors.
 #[doc(hidden)]
 pub mod locks;
@@ -69,6 +70,7 @@ pub use messaging::{EnvelopeSender, build_envelope};
 pub use mirror::{mirror_file, mirror_file_exact, mirror_tree};
 pub use plugin::{
     Plugin, PluginConfig, PluginError, PluginStatus, Registry, Updater, Verb, VerbError, VerbIo,
+    merge_settings,
 };
 pub use profile::{Profile, Profiles, ResolvedProfile, RoleError, SkillProvider};
 pub use state::{IdleReason, LlmEngineChange, LlmEngineHook, LlmEngineState, state_label};

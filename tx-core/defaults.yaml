@@ -1,9 +1,3 @@
-# tx configuration: ~/.config/tx-ide/config.yaml (`tx help` prints the path in use).
-# Written once, by `tx setup` when `install` runs it, with every default spelled out and the
-# plugins that were selected; edit any value. Nothing overwrites this file, so a newer default
-# reaches you only if you copy it from config/tx-ide/config.yaml in the repository. A key you
-# delete falls back to the same default.
-
 # Defaults for `tx create`; a flag given on the command line replaces its key.
 agent:
   engine: claude               # claude | codex

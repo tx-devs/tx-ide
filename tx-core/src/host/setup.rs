@@ -465,7 +465,8 @@ pub fn load_config(global: &Global, config: &CoreConfig) -> Result<Config, Failu
 pub struct Installation {
     pub config: CoreConfig,
     pub file: Config,
-    /// The `plugins:` entries of `file`, as the activation read them.
+    /// The `plugins:` entries of `file` with each installed plugin's manifest settings under
+    /// them, as the activation read them.
     pub entries: BTreeMap<String, Entry>,
     pub index: Index,
     pub activation: Activation,
@@ -481,8 +482,12 @@ impl Installation {
     /// [`Self::read`] from an already resolved config.
     pub fn read_with(global: &Global, config: CoreConfig) -> Result<Self, Failure> {
         let file = load_config(global, &config)?;
-        let entries = crate::host::user_config::entries(&file.plugins);
         let index = Index::read(&config, crate::VERSION);
+        let entries = crate::plugin::index::entries_with_defaults(
+            &index,
+            crate::host::user_config::entries(&file.plugins),
+        )
+        .map_err(Failure::Plugin)?;
         let activation = Activation::new(&index, &entries, crate::plugin::RESERVED_VERBS);
         Ok(Self {
             config,
