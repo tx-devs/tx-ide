@@ -8,16 +8,17 @@
 #                     IDE), ide, full (the default), or a preset of your own in <config>/presets/
 #   --plugins a,b,c   exactly these plugins, and what they require
 #   --upgrade         after a `git pull`: the selection recorded by the last install, resolved
-#                     again and rebuilt. It asks nothing and never writes config.yaml or a dotfile
-#                     (so it takes no --preset, --plugins or --link-dotfiles)
-#   --link-dotfiles   link ~/.config/nvim and ~/.tmux.conf to this checkout's config/
+#                     again and rebuilt. It asks nothing and never links a dotfile (so it takes
+#                     no --preset, --plugins or --link-dotfiles)
+#   --link-dotfiles   link ~/.config/nvim, ~/.tmux.conf and <config>/tmux.conf to this
+#                     checkout's config/: the maintainer's own editor, tmux and IDE keys
 #   --yes             ask nothing: without --preset or --plugins the selection is full
 #
 #   1. needs cargo, tmux and jq
 #   2. the plugins: builds tx-setup and runs it (`tx setup --bundles <repo>/plugins`). On a
 #      terminal, with no flag that chooses, it shows a checklist of the shipped plugins; it
-#      records the selection in <data>/shipped/.selection and writes <config>/config.yaml when
-#      there is none (an existing file is yours and is never touched)
+#      records the selection in <data>/shipped/.selection. Nothing is written under <config>:
+#      that directory is yours, and tx's defaults come with the binary and the plugins
 #   3. cargo build --release: tx, txi and the program of every selected plugin, into
 #      $CARGO_TARGET_DIR (default <repo>/target)
 #   4. cargo install --path tx-core --locked: tx and txi into $CARGO_INSTALL_ROOT/bin
@@ -25,10 +26,10 @@
 #   5. tx update --bundles <repo>/plugins --binaries <target>/release: the selected plugins under
 #      <data>/shipped, the pending update steps, the published resources, each plugin's updater
 #   6. the programs the selected plugins need and PATH does not have: a warning each
-#   7. only with --link-dotfiles (or the checklist's last row): ~/.config/nvim and ~/.tmux.conf
-#      become links to config/{nvim,tmux.conf}; a real directory or file there is moved to
-#      <path>.bak.<stamp>
-#   8. config.yaml: reported only (step 2 wrote it, or it was there and is left as it is)
+#   7. only with --link-dotfiles (or the checklist's last row): ~/.config/nvim, ~/.tmux.conf and
+#      <config>/tmux.conf become links to config/{nvim,tmux.conf,tx-ide/tmux.conf}; a real
+#      directory or file there is moved to <path>.bak.<stamp>
+#   8. config.yaml: reported only (it is yours; a missing one means every default)
 #   9. the switch from the old install (once; a second run finds nothing to do):
 #      - the old install's `tx` (~/.local/bin/tx) becomes `tx-old`, and ~/.tx-ide/tmux.conf sets
 #        @tx-ide-bin tx-old so the old fragment's prefix+t / prefix+T popups keep working;
@@ -424,10 +425,11 @@ else
 fi
 
 # === 7: the operator's nvim and tmux config ===
-# config/ holds the editor and default-server tmux config; the links make them live. A link
-# already pointing there is left alone; a link elsewhere is replaced; a real directory or file is
-# moved aside first.
-header "Dotfiles (~/.config/nvim and ~/.tmux.conf)"
+# config/ holds one person's editor, default-server tmux config and keys for the IDE's own tmux
+# server (tx ships tmux's stock keys and sources <config>/tmux.conf last); tx needs none of them.
+# The links make them live. A link already pointing there is left alone; a link elsewhere is
+# replaced; a real directory or file is moved aside first.
+header "Dotfiles (~/.config/nvim, ~/.tmux.conf and $TX_CONFIG/tmux.conf)"
 link_config() {
   local target="$1" link="$2" current
   if [[ -L "$link" ]]; then
@@ -463,22 +465,19 @@ link_config() {
 if ((LINK_DOTFILES)); then
   link_config "$REPO/config/nvim" "$HOME_DIR/.config/nvim"
   link_config "$REPO/config/tmux.conf" "$HOME_DIR/.tmux.conf"
+  link_config "$REPO/config/tx-ide/tmux.conf" "$TX_CONFIG/tmux.conf"
 else
   info "not linked (use --link-dotfiles)"
 fi
 
 # === 8: tx's config file ===
-# tx setup seeds it in step 2, with the selected plugins, when there is none. The values are the
-# operator's to change, and a later install never undoes them.
+# Nothing writes it: the defaults are in the binary and in each plugin's manifest, so a later
+# install can change a default without touching, or being shadowed by, a file of the user's.
 header "tx's config file"
 if ((CONFIG_EXISTED)); then
-  ok "$TX_CONFIG_FILE" "exists: left as it is"
-elif ((UPGRADE)); then
-  warn "$TX_CONFIG_FILE" "absent: --upgrade does not write it"
-elif ((DRY_RUN)); then
-  would "$TX_CONFIG_FILE" "be written by tx setup"
+  ok "$TX_CONFIG_FILE" "yours: left as it is"
 else
-  ok "$TX_CONFIG_FILE" "written by tx setup"
+  info "no $TX_CONFIG_FILE: every setting is tx's default (\`tx config --defaults\` lists them)"
 fi
 
 # === 9a: the old install becomes tx-old ===
@@ -616,10 +615,11 @@ fi
 
 # === Final ===
 if ((LINK_DOTFILES)); then
-  DOTFILES="~/.config/nvim and ~/.tmux.conf link to $REPO/config; edit them there, they are versioned."
+  DOTFILES="~/.config/nvim, ~/.tmux.conf and $TX_CONFIG/tmux.conf link to $REPO/config; edit them
+    there, they are versioned."
 else
-  DOTFILES="~/.config/nvim and ~/.tmux.conf are yours and were left alone; $REPO/install --link-dotfiles
-    makes them links to $REPO/config."
+  DOTFILES="~/.config/nvim, ~/.tmux.conf and $TX_CONFIG/tmux.conf are yours and were left alone;
+    $REPO/install --link-dotfiles makes them links to $REPO/config."
 fi
 cat <<EOF
 
@@ -631,7 +631,7 @@ ${B}Start the IDE:${X}
 ${B}Later:${X}
   ${D}git pull && $REPO/install --upgrade${X}
                            the same selection, resolved again and rebuilt; it asks nothing and
-                           leaves config.yaml and the dotfiles alone
+                           leaves the dotfiles alone
   ${D}$REPO/install --preset NAME${X}   (or --plugins a,b,c) another selection: headless, ide, full
 
 ${B}The old install, as tx-old:${X}
@@ -643,8 +643,16 @@ ${B}The old install, as tx-old:${X}
 
 ${B}Your own config:${X}
   - $DOTFILES
-  - tx's settings are in $TX_CONFIG_FILE (agent defaults for tx create, the plugins);
-    it is written once, by tx setup, and is yours to edit in place.
+  - $TX_CONFIG is yours; tx never writes there, and what you put there wins over tx's defaults:
+      config.yaml     settings, only the keys you change (\`tx config\` shows the result,
+                      \`tx config --defaults\` every key)
+      tmux.conf       loaded last by the IDE's tmux server: prefix, bindings, status bar.
+                      The IDE's prefix is tmux's own, C-b, and - l Space are tmux's again; a
+                      server already running keeps its keys until it restarts. For the keys tx
+                      shipped before (prefix C-a, | and - splits, h j k l resize) copy
+                      $REPO/config/tx-ide/tmux.conf there, or run install --link-dotfiles.
+      nvim/tx.lua     run last in every nvim view: mappings over tx's own
+      harness/, roles/, layouts/, themes/    your agents, skills, MCP servers, roles, layouts
   - restart your default tmux server once (tmux kill-server on the default socket) so it stops
     sourcing the old fragment; the IDE's server is unaffected.
   - terminal profile: unchanged. The IDE's M-1..9 / Cmd-Opt-digit keys come from the keymap
