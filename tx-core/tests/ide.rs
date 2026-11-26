@@ -700,10 +700,13 @@ fn disabling_ide_gives_the_config_back_to_core() {
     assert!(!cli.state().join("keys/ide.tmux").exists());
     assert!(cli.state().join("keys/kill.tmux").is_file());
 
-    // Safe to repeat: nothing is left to take back, and a config edited since stays.
-    std::fs::write(cli.conf(), "# my own\n").unwrap();
+    // Safe to repeat: nothing is left to take back, and a config edited since stays. (It keeps
+    // tx's header: with one directory as config and data, a file without it is the user's own
+    // tmux.conf, which `tx update` refuses to overwrite.)
+    let edited = format!("{}, edited by hand\n", tx_core::core::TMUX_CONF_HEADER);
+    std::fs::write(cli.conf(), &edited).unwrap();
     assert_eq!(cli.ok(&["update"]), updated(&[]));
-    assert_eq!(std::fs::read_to_string(cli.conf()).unwrap(), "# my own\n");
+    assert_eq!(std::fs::read_to_string(cli.conf()).unwrap(), edited);
 
     std::fs::remove_file(cli.state().join("config.yaml")).unwrap();
     assert_eq!(
@@ -1794,6 +1797,33 @@ fn an_error_in_the_users_tmux_conf_is_reported_with_its_file_and_line() {
             .contains("pick")
     );
     cli.tmux(&["kill-server"]);
+}
+
+/// One directory as both config and data: the user's tmux.conf is where tx writes its own, and
+/// their nvim/tx.lua where it prunes. The update refuses, before it publishes anything, instead
+/// of destroying either.
+#[test]
+fn a_users_file_in_a_directory_that_is_also_data_is_not_destroyed() {
+    let cli = Cli::new();
+    std::fs::create_dir_all(cli.state().join("nvim")).unwrap();
+    for (file, text) in [
+        ("tmux.conf", "# MY OWN\n"),
+        ("nvim/tx.lua", "vim.g.mine = 1\n"),
+    ] {
+        let path = cli.state().join(file);
+        std::fs::write(&path, text).unwrap();
+        let stderr = cli.fails(&["update"], 1);
+        assert!(
+            stderr.contains(&format!("{} is your own file", path.display())),
+            "{stderr}"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        assert!(!cli.state().join("keys").exists(), "nothing published");
+        std::fs::remove_file(&path).unwrap();
+    }
+    // The file tx generated itself is not the user's: a second update overwrites it.
+    cli.ok(&["update"]);
+    cli.ok(&["update"]);
 }
 
 /// A record from before root keys were recorded cannot say which root keys to unbind: the
