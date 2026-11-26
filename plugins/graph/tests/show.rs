@@ -1,12 +1,12 @@
-//! Enter's "show the agent" on a private tmux server: nested into the launching pane only where
-//! the picker would nest.
+//! Enter's focus ([`Show::Focus`]) of an agent no pane shows, on a private tmux server: nested
+//! into the launching pane only where it is a host view's shell.
 
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use tx_client::show::Show;
 use tx_client::tmux::Ui;
-use tx_graph::run;
 
 struct Server {
     socket: PathBuf,
@@ -91,7 +91,8 @@ fn an_agent_no_pane_shows_nests_into_a_home_shell_pane() {
         assert!(Instant::now() < deadline, "the home pane never ran a shell");
         std::thread::sleep(Duration::from_millis(50));
     }
-    run::show_agent(&ui, "no-client", Some(&home), "worker").unwrap();
+    ui.show_session("no-client", Show::Focus, "worker", Some(&home))
+        .unwrap();
     let command = server.start_command(&home);
     assert!(
         command.contains("attach -t") && command.contains("=worker"),
@@ -106,7 +107,9 @@ fn elsewhere_it_switches_the_client_and_leaves_the_pane_alone() {
     let plain = server.pane("plain");
     let before = server.start_command(&plain);
     // No client is attached in the test, so the switch itself fails, saying why.
-    let error = run::show_agent(&ui, "no-client", Some(&plain), "worker").unwrap_err();
-    assert_eq!(error, "no terminal client to move");
+    let error = ui
+        .show_session("no-client", Show::Focus, "worker", Some(&plain))
+        .unwrap_err();
+    assert_eq!(error, "no terminal client");
     assert_eq!(server.start_command(&plain), before);
 }

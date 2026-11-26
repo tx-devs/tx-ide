@@ -322,11 +322,6 @@ fn start_agent(
 /// Shows agent `name` that way: through the popup's goto option when resident, else from the
 /// pane this board runs in.
 fn show_agent(tmux: &Ui, resident: Option<&str>, show: Show, name: &str) -> Result<(), String> {
-    if show == Show::Focus && tmux.pane_for_session(name, "").is_none() {
-        return Err(format!(
-            "{name}: not attached to any pane (a attaches it, p pops it up)"
-        ));
-    }
     match resident {
         Some(session) => {
             tmux.set_session_option(session, GOTO_OPTION, &format!("{} {name}", show.name()))

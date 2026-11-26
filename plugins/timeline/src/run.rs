@@ -2,8 +2,9 @@
 //! exit and on panic), keys / mouse / resize multiplexed with the refresh tick.
 //!
 //! Enter, a and p show the cursor lane's session through tx-client ([`Ui::show_session`]):
-//! Enter focuses the pane already showing it, a lets the operator pick a pane to attach it into
-//! (attach-to), p nest-attaches it in a popup. Run in a pane, the loop does it itself. The
+//! Enter focuses it (the pane already showing it, else opened from the pane the timeline was
+//! opened in), a lets the operator pick a pane to attach it into (attach-to), p nest-attaches it
+//! in a full-screen popup. Run in a pane, the loop does it itself. The
 //! resident (viewed through a popup) cannot reach the outer client, so it leaves `<mode> <name>`
 //! in [`GOTO_OPTION`] on its own tmux session and detaches; `tx _timeline-attach`, which runs
 //! on the outer client, picks it up. Every tmux call goes through `tx-client` against the core's
@@ -146,8 +147,6 @@ fn jump(
     let lane = &app.payload.lanes[index];
     let outcome = if !lane.live {
         Err("not running".to_owned())
-    } else if show == Show::Focus && tmux.pane_for_session(&lane.name, "").is_none() {
-        Err("not attached to any pane".to_owned())
     } else {
         match resident {
             Some(session) => tmux
