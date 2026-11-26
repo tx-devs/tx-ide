@@ -647,7 +647,7 @@ ${B}Your own config:${X}
       config.yaml     settings, only the keys you change (\`tx config\` shows the result,
                       \`tx config --defaults\` every key)
       tmux.conf       loaded last by the IDE's tmux server: prefix, bindings, status bar.
-                      The IDE's prefix is tmux's own, C-b, and - l Space are tmux's again; a
+                      The IDE's prefix is tmux's own, C-b, and - and l are tmux's again; a
                       server already running keeps its keys until it restarts. For the keys tx
                       shipped before (prefix C-a, | and - splits, h j k l resize) copy
                       $REPO/config/tx-ide/tmux.conf there, or run install --link-dotfiles.

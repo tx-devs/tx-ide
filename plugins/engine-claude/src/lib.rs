@@ -260,9 +260,17 @@ pub const PLUGIN_AUTHORING_SKILL: &str = "plugin-authoring";
 #[serde(deny_unknown_fields)]
 pub struct Settings {
     /// Claude settings (`settings.json` keys) every launch passes on; the defaults are the
-    /// `settings` of the plugin's manifest.
-    #[serde(default)]
+    /// `settings` of the plugin's manifest. `null` is none at all: the operator's way to drop
+    /// every default at once.
+    #[serde(default, deserialize_with = "map_or_null")]
     pub claude_settings: serde_json::Map<String, Value>,
+}
+
+/// A mapping, or `null` for an empty one.
+fn map_or_null<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<serde_json::Map<String, Value>, D::Error> {
+    Ok(Option::deserialize(deserializer)?.unwrap_or_default())
 }
 
 impl ClaudeAdapter {
@@ -1639,6 +1647,18 @@ mod tests {
         );
         let unwired: Value = serde_json::from_str(&launch_settings(&operator, &[], &[])).unwrap();
         assert_eq!(unwired["hooks"], operator["hooks"]);
+    }
+
+    /// `claude_settings: null` laid over the defaults replaces them: no settings but tx's own.
+    #[test]
+    fn null_claude_settings_are_none_at_all() {
+        let settings: Settings =
+            serde_json::from_value(serde_json::json!({"claude_settings": null})).unwrap();
+        assert!(settings.claude_settings.is_empty());
+        assert!(
+            serde_json::from_value::<Settings>(serde_json::json!({"claude_settings": [1]}))
+                .is_err()
+        );
     }
 
     #[test]

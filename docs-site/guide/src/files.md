@@ -120,7 +120,7 @@ stderr; a requirement without a bundle is only named. `--list` prints
 With none of these flags, and stdin and stderr both terminals, it shows a checklist on stderr:
 one row per bundle (a tick box, the id, the tier, the description, and `needs <program> (not
 found)` for each program of its `needs` that is not on `PATH`) and a last row offering to link
-`~/.config/nvim` and `~/.tmux.conf` to the checkout, unticked. It starts with `full` ticked.
+`~/.config/nvim`, `~/.tmux.conf` and the IDE keys (`<config>/tmux.conf`) to the checkout, unticked. It starts with `full` ticked.
 `j`/`k` or the arrows move, `g` and `G` jump to the first and last row, space toggles a row
 (ticking a plugin ticks what it requires, unticking one unticks what requires it), `1`, `2` and
 `3` tick exactly `headless`, `ide` and `full`, Enter accepts, and `q` or Escape leaves without

@@ -176,7 +176,8 @@ Several of these replace what tmux binds there by default (`/` describe a key, `
 `m` mark pane, `s` session tree, `t` clock, `n` next window, `Space` next layout, `?` list keys);
 the `ide` keys work without the prefix, so a shell or agent in a pane never receives them.
 `tx config` lists every key with its current value (`tx config --defaults` with a comment on each),
-and the home screen's `?` and prefix+? show the prefix keys live.
+and prefix+? shows the prefix keys as they are bound; the home screen's `?` lists them as they
+were when the home started.
 
 ### Moving or dropping a key
 
