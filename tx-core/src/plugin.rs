@@ -34,6 +34,7 @@ pub const RESERVED_VERBS: &[&str] = &[
     "help",
     "engines",
     "plugins",
+    "config",
     "create",
     "fork",
     "respawn",
@@ -56,8 +57,8 @@ pub use index::{
     Activation, ActiveVerb, Entry, Index, Installed, PluginState, Problem, ShippedStamp,
 };
 pub use manifest::{
-    EngineMethod, Events, Manifest, ManifestEngine, ManifestError, ManifestInterrupt,
-    ManifestOnEvent, ManifestProgram, ManifestVerb, PLUGIN_API, Tier,
+    EngineMethod, Events, MANIFEST_FILE, Manifest, ManifestEngine, ManifestError,
+    ManifestInterrupt, ManifestOnEvent, ManifestProgram, ManifestVerb, PLUGIN_API, Tier,
 };
 pub use sink::{ExecSink, TRACE_SINK};
 
@@ -266,6 +267,20 @@ fn validate_resource_name(name: &str) -> Result<(), PluginError> {
     }
 }
 
+/// Lays `over` on `base`: a mapping merges key by key, anything else (a scalar, a list, a null)
+/// replaces what was there. How a user's `plugins.<id>.settings` go over the defaults of the
+/// plugin's manifest.
+pub fn merge_settings(base: &mut Value, over: Value) {
+    match (base, over) {
+        (Value::Object(base), Value::Object(over)) => {
+            for (key, value) in over {
+                merge_settings(base.entry(key).or_insert(Value::Null), value);
+            }
+        }
+        (base, over) => *base = over,
+    }
+}
+
 /// The host side, kept in `TxCore`.
 #[derive(Default)]
 pub(crate) struct Host {
@@ -274,6 +289,8 @@ pub(crate) struct Host {
     /// (plugin id, updater), manifest order.
     updaters: Vec<(String, Arc<dyn Updater>)>,
     status: Vec<(String, PluginStatus)>,
+    /// Each active plugin's settings: its manifest's defaults with the config's laid over them.
+    settings: BTreeMap<String, Value>,
 }
 
 /// One plugin after `register`: `None` when the config disabled it.
@@ -378,6 +395,9 @@ impl TxCore {
             for updater in registry.updaters {
                 self.host.updaters.push((loaded.id.clone(), updater));
             }
+            self.host
+                .settings
+                .insert(loaded.id.clone(), registry.settings);
             self.host.status.push((loaded.id, PluginStatus::Active));
         }
         Ok(())
@@ -401,6 +421,13 @@ impl TxCore {
         hosted_ids: &[&str],
     ) -> Result<(), PluginError> {
         let context = Arc::new(context);
+        for (state, _, _) in activation.active(index) {
+            if !hosted_ids.contains(&state.id.as_str()) {
+                self.host
+                    .settings
+                    .insert(state.id.clone(), state.settings.clone());
+            }
+        }
         external::list(self, activation, hosted_ids);
         external::plug_verbs(self, index, activation, &context, hosted_ids);
         external::plug_engines(self, index, activation, &context, hosted_ids)?;
@@ -430,5 +457,11 @@ impl TxCore {
     /// run as their own programs in plugin order.
     pub fn plugin_status(&self) -> &[(String, PluginStatus)] {
         &self.host.status
+    }
+
+    /// An active plugin's settings, linked into this process or not: what its own program is
+    /// handed. `None` for a plugin that is not active.
+    pub fn plugin_settings(&self, id: &str) -> Option<&Value> {
+        self.host.settings.get(id)
     }
 }

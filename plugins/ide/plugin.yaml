@@ -3,6 +3,19 @@ id: ide
 description: "The tmux IDE: the server config `tx update` composes, `ui attach` and `ui view`."
 tier: ide
 needs: [tmux, nvim]
+settings:
+  # The IDE's root-table keys: they work without the prefix, so a shell or an agent in a pane
+  # never receives them. `null` gives one back.
+  keys:
+    pane_left: C-h               # the pane (or nvim split) to the left; the prefix, then C-h, sends C-h itself
+    pane_down: C-j               # the pane below; the prefix, then C-j, sends C-j itself
+    pane_up: C-k                 # the pane above; the prefix, then C-k, sends C-k itself
+    pane_right: C-l              # the pane to the right; the prefix, then C-l, sends C-l itself
+    scroll_up: C-u               # PageUp in an agent pane (Claude Code, Codex); elsewhere C-u itself
+    scroll_down: C-d             # PageDown in an agent pane; elsewhere C-d itself
+    window_next: C-Tab           # the next window; the terminal must send C-Tab (extended keys)
+    window_previous: C-S-Tab     # the previous window
+    select_pane: M-              # M-1..9 select pane 1-9; modifiers only, the digit is added
 
 verbs:
   - name: ui

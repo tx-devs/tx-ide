@@ -11,6 +11,7 @@ use std::process::{ExitCode, Stdio};
 use std::sync::Arc;
 
 use crate::config::SHIPPED_PLUGINS_DIR;
+use crate::core::TMUX_CONF_HEADER;
 use crate::host::bundle::{self, Program, Source, Stamp};
 use crate::plugin::{Installed, Launcher, ManifestProgram, PLUGIN_API, PluginState};
 use crate::sdk::{RESPAWN_LINE, RETIRE_ENV};
@@ -156,6 +157,15 @@ pub fn run(global: &Global, arguments: &[String]) -> Result<ExitCode, Failure> {
 /// named, and the rest is published all the same. `false`: nothing could be published, and why
 /// is on stderr.
 fn publish(installation: &Installation, summary: &mut Summary) -> bool {
+    if let Some(file) = user_file_in_data(&installation.config.directories) {
+        eprintln!(
+            "tx: update: {} is your own file, but the config and data directories are both {}, \
+             where tx writes and prunes its files: give tx a config directory of its own",
+            file.display(),
+            installation.config.directories.data.display()
+        );
+        return false;
+    }
     let mut resources: BTreeMap<String, Vec<u8>> = roles::SHIPPED
         .iter()
         .map(|(name, bytes)| ((*name).to_owned(), bytes.to_vec()))
@@ -185,6 +195,26 @@ fn publish(installation: &Installation, summary: &mut Summary) -> bool {
             false
         }
     }
+}
+
+/// The user's own files under `<config>`: their `tmux.conf`, which the IDE sources last, and the
+/// lua file every nvim view runs last.
+const USER_TMUX_CONF: &str = crate::config::CONF_FILE;
+const USER_NVIM_FILE: &str = "nvim/tx.lua";
+
+/// With one directory as both config and data, the user's own `tmux.conf` and `nvim/tx.lua` sit
+/// where tx writes and prunes its own: the one an update would destroy, if any. A `tmux.conf` tx
+/// wrote opens with [`TMUX_CONF_HEADER`].
+fn user_file_in_data(directories: &Directories) -> Option<PathBuf> {
+    if directories.config != directories.data {
+        return None;
+    }
+    let conf = directories.config.join(USER_TMUX_CONF);
+    if std::fs::read_to_string(&conf).is_ok_and(|text| !text.starts_with(TMUX_CONF_HEADER)) {
+        return Some(conf);
+    }
+    let nvim = directories.config.join(USER_NVIM_FILE);
+    nvim.is_file().then_some(nvim)
 }
 
 /// Runs the `update` program of an installed plugin, with no input: every line it prints is

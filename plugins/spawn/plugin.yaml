@@ -4,6 +4,9 @@ description: "Prefix+n, the new-agent form: name, tags, prompt, engine, model, e
 tier: ide
 requires: [ide]
 needs: [nvim]
+settings:
+  keys:
+    new_agent: n                 # prefix+n: the new-agent form
 
 verbs:
   - name: _new-agent

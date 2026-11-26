@@ -87,6 +87,11 @@ verbs:
                                                                     of {id, status, detail, origin, directory, description,
                                                                     tier, requires, needs, verbs, engine}, origin being
                                                                     shipped or user
+  config [--defaults | --path]                                      the config in use: your config.yaml laid over tx's
+                                                                    defaults, your values marked; --defaults: every
+                                                                    default with its documentation (the core's, and the
+                                                                    settings of each installed plugin's manifest);
+                                                                    --path: your file
   update [--bundles DIR --binaries DIR [--link]]                    bring this machine up to this tx: run the update steps
                                                                     it has not had yet (<data>/update-version), then each
                                                                     plugin's updater (the IDE's tmux config, keys, shipped
@@ -111,7 +116,10 @@ skills from --skill-dir, else <data>/harness/skills (written by `tx update`), th
 (written by `tx update`), then <config>/plugins (your own).
 A flag left out is read from its variable: $TX_PROFILE_PATH, $TX_SKILL_PATH, $TX_PLUGIN_PATH
 (colon-separated), $TX_CONFIG_FILE, $TX_SESSION_ENV (a JSON object, for --env).
-The config file is <config>/config.yaml (--config FILE overrides); every key is optional:
+The config file is <config>/config.yaml (--config FILE overrides). It is yours: tx never writes
+it, and it holds only the keys you change. Every other key keeps tx's default, which comes with
+the binary and the installed plugins (`config --defaults` prints them all), so a default tx
+changes later reaches you:
   agent:                        defaults for create; a flag given replaces its key
     engine: claude              an engine kind (see `engines`)
     roles: []                   empty: the definition's `roles`; any --role replaces the list
@@ -121,8 +129,19 @@ The config file is <config>/config.yaml (--config FILE overrides); every key is 
   worktree:
     build_outputs: [target]     paths in a worktree `gc` may delete; relative, no `..`, not tracked by git
   plugins:                      one entry per plugin id (see `plugins`)
-    <id>: { enabled: true, settings: {...} }
+    <id>: { enabled: true, settings: {...} }    settings are laid over the plugin's own, key by key
 ";
+
+/// What `config` prints.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfigView {
+    /// The user's file laid over the defaults, the user's values marked.
+    Effective,
+    /// Every default, with the comments that document each key.
+    Defaults,
+    /// Where the user's file is.
+    Path,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Verb {
@@ -205,6 +224,10 @@ pub enum Verb {
     /// `plugins [--json]`: every plugin and its status.
     Plugins {
         json: bool,
+    },
+    /// `config [--defaults|--path]`: the config as tx reads it.
+    Config {
+        view: ConfigView,
     },
     /// `update`: the pending update steps, then every plugin's updater. Its arguments are
     /// `update`'s own to read.
@@ -363,6 +386,18 @@ pub fn parse(args: &[String]) -> Result<Invocation, UsageError> {
             }
             Verb::Plugins { json }
         }
+        Some("config") => Verb::Config {
+            view: match cursor.next() {
+                None => ConfigView::Effective,
+                Some("--defaults") => ConfigView::Defaults,
+                Some("--path") => ConfigView::Path,
+                Some(other) => {
+                    return Err(usage(format!(
+                        "config takes --defaults or --path, got {other:?}"
+                    )));
+                }
+            },
+        },
         Some("update") => Verb::Update {
             arguments: cursor.rest(),
         },

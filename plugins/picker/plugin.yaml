@@ -4,6 +4,9 @@ description: Prefix+t, the fzf session picker.
 tier: ide
 requires: [ide]
 needs: [fzf]
+settings:
+  keys:
+    open: t                      # prefix+t: the agent picker
 
 verbs:
   - name: _list

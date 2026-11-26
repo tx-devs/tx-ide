@@ -426,7 +426,12 @@ fn the_dotfiles_are_linked_only_when_asked() {
     let output = dry_run(home.path(), &["--link-dotfiles"]);
     let nvim = home.path().join(".config/nvim");
     let tmux = home.path().join(".tmux.conf");
-    for (link, target) in [(&nvim, "/config/nvim"), (&tmux, "/config/tmux.conf")] {
+    let keys = home.path().join(".config/tx-ide/tmux.conf");
+    for (link, target) in [
+        (&nvim, "/config/nvim"),
+        (&tmux, "/config/tmux.conf"),
+        (&keys, "/config/tx-ide/tmux.conf"),
+    ] {
         assert!(
             reported(&output, &link.display().to_string(), "would link to ")
                 && output.lines().any(|line| line.ends_with(target)),
@@ -434,9 +439,12 @@ fn the_dotfiles_are_linked_only_when_asked() {
             link.display()
         );
     }
-    assert_eq!(output.matches("would link").count(), 2, "{output}");
+    assert_eq!(output.matches("would link").count(), 3, "{output}");
     assert!(!output.contains("not linked"), "{output}");
-    assert!(!nvim.exists() && !tmux.exists(), "a dry run links nothing");
+    assert!(
+        !nvim.exists() && !tmux.exists() && !keys.exists(),
+        "a dry run links nothing"
+    );
 }
 
 #[test]
@@ -565,8 +573,8 @@ fn an_agent_worktree_is_refused_only_when_linking() {
     );
 }
 
-/// `config.yaml` is tx setup's to write, once: the script only reports. `--upgrade` never
-/// writes it.
+/// `config.yaml` is the user's: nothing writes it, and the script only reports. A missing one
+/// means every default, with or without `--upgrade`.
 #[test]
 fn the_config_file_is_reported_and_never_written() {
     if !tools() {
@@ -576,16 +584,14 @@ fn the_config_file_is_reported_and_never_written() {
     let file = home.path().join(".config/tx-ide/config.yaml");
     let subject = file.display().to_string();
 
-    let output = dry_run(home.path(), &[]);
-    assert!(
-        reported(&output, &subject, "would be written by tx setup"),
-        "{output}"
-    );
-    let output = dry_run(home.path(), &["--upgrade"]);
-    assert!(
-        reported(&output, &subject, "absent: --upgrade does not write it"),
-        "{output}"
-    );
+    for flags in [&[][..], &["--upgrade"]] {
+        let output = dry_run(home.path(), flags);
+        assert!(
+            output.contains(&format!("no {subject}: every setting is tx's default")),
+            "{output}"
+        );
+        assert!(!output.contains("written by tx setup"), "{output}");
+    }
     assert!(!file.exists(), "a dry run writes nothing");
 
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -593,7 +599,7 @@ fn the_config_file_is_reported_and_never_written() {
     for flags in [&[][..], &["--upgrade"]] {
         let output = dry_run(home.path(), flags);
         assert!(
-            reported(&output, &subject, "exists: left as it is"),
+            reported(&output, &subject, "yours: left as it is"),
             "{output}"
         );
     }

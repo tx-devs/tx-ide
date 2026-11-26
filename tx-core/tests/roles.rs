@@ -9,7 +9,6 @@ fn the_core_ships_its_roles_and_harness() {
         names,
         [
             "agents/COMMON.md",
-            "agents/COMMON.local.md",
             "agents/TX-ASSISTANT.md",
             "harness/agents/claude.md",
             "harness/agents/developer.md",

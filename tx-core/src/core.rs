@@ -27,13 +27,24 @@ pub const TMUX_BINARY: &str = "tmux";
 pub const SESSION_ID_ENV: &str = "TX_SESSION_ID";
 pub const TMUX_SOCKET_ENV: &str = "TX_TMUX_SOCKET";
 
+/// How every server config tx writes opens: [`DEFAULT_TMUX_CONF`] and the one the IDE composes.
+/// What tells a file of tx's from a user's own `tmux.conf` in the same place.
+macro_rules! tmux_conf_header {
+    () => {
+        "# tx-core server config"
+    };
+}
+pub const TMUX_CONF_HEADER: &str = tmux_conf_header!();
+
 /// Written on `open` when the data dir has no `tmux.conf`. The IDE may replace it.
-pub const DEFAULT_TMUX_CONF: &str = "\
-# tx-core server config. Edit freely; the IDE may replace this file.
+pub const DEFAULT_TMUX_CONF: &str = concat!(
+    tmux_conf_header!(),
+    ". Edit freely; the IDE may replace this file.
 # The server exits with its last session; records of its sessions become `exited`.
 set -s exit-empty on
 set -g history-limit 50000
-";
+"
+);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]

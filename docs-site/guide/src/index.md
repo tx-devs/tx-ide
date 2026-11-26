@@ -56,18 +56,19 @@ without the IDE), `ide` or `full`, or one of your own, resolved and recorded by 
 [Files](files.md)). On a terminal `install` shows a checklist with `full` ticked; `--preset NAME`
 or `--plugins a,b,c` chooses without asking, and `--yes`, or a run without a terminal, takes
 `full`. Only the selected plugins are built and laid out under `<data>/shipped`; `tx` and `txi`
-are the only programs that go on `PATH`. `config.yaml` is written once, with the selected
-plugins. Your `~/.config/nvim` and `~/.tmux.conf` are left alone unless you pass
-`--link-dotfiles` (or tick the checklist's last row), which links them to the checkout's
-`config/`.
+are the only programs that go on `PATH`. Nothing is written under `~/.config/tx-ide`: it is
+yours, and what you put there (`config.yaml`, `tmux.conf`, `nvim/tx.lua`) is laid over tx's
+defaults. Your `~/.config/nvim` and `~/.tmux.conf` are left alone unless you pass
+`--link-dotfiles` (or tick the checklist's last row), which links them, and the maintainer's
+IDE keys, to the checkout's `config/`.
 
 The install script is safe to re-run. To upgrade, `git pull` and run `install --upgrade`: it
-asks nothing, resolves the recorded selection again, rebuilds, and never writes `config.yaml`
-or a dotfile. Run `tx update` after you rebuild `tx` by hand: it runs the pending update steps
+asks nothing, resolves the recorded selection again, rebuilds, and never links a dotfile. Run `tx update` after you rebuild `tx` by hand: it runs the pending update steps
 (see [Files](files.md)), then each plugin's updater, which rewrites the tmux configuration: it
 names the binary's path.
 
-Once attached, the tmux prefix is `C-a`. The home screen lists your projects, their agents and
+Once attached, the tmux prefix is tmux's own, `C-b`, unless your `~/.config/tx-ide/tmux.conf`
+sets another. The home screen lists your projects, their agents and
 their views; `n` starts a new agent, Enter goes into one, `?` shows every key.
 
 ## Where to go next

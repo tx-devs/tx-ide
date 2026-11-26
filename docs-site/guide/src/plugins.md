@@ -66,8 +66,11 @@ deferred); `tx harness ls` and `tx harness check` show it, and nothing else is e
 `disallowedTools` go as `--disallowedTools`, and its MCP servers as inline `--mcp-config` JSON.
 `tx harness check --engine claude` lists what every launch carries that no flag removes. The plugin's
 own settings (`plugins.engine-claude.settings.claude_settings` in `config.yaml`) are Claude
-settings merged into every launch's `--settings`, under tx's own keys; `~/.claude/settings.json`
-is never read. Reference skills (`metadata.provided-by: claude-bundled|claude-synced`, frontmatter only) are
+settings passed in every launch's `--settings`: yours are laid over the defaults the plugin's
+manifest ships (`tx config --defaults`), a key set to `null` is left out, your `hooks` run
+before tx's for the same event and your `enabledPlugins` are kept; `hooks` or `enabledPlugins`
+of the wrong shape are refused. tx sets `disableBundledSkills` and
+`skipDangerousModePermissionPrompt` itself. `~/.claude/settings.json` is never read. Reference skills (`metadata.provided-by: claude-bundled|claude-synced`, frontmatter only) are
 delivered without their text passing through tx. A synced skill is a link in the per-agent plugin
 to `~/.claude/skills/synced/<account>/<name>/`. Bundled skills stay off (`disableBundledSkills`)
 unless the agent lists one. Claude cannot turn them on one by one, so that turns the whole bundle
@@ -371,8 +374,8 @@ on any terminal size. No model or effort is written; add them by hand.
 **`setup`**: `setup --bundles DIR [--preset NAME | --plugins a,b,c | --upgrade] [--list]` chooses
 which of the shipped plugins an install takes: by preset (`headless`, `ide`, `full`, or one of
 yours in `<config>/presets/`), by id, or on a terminal from a checklist. It records the result in
-`<data>/shipped/.selection`, which `tx update --bundles` lays out, and seeds `config.yaml` when
-there is none (see [Files and directories](files.md)). It is the program `tx-setup`
+`<data>/shipped/.selection`, which `tx update --bundles` lays out (see
+[Files and directories](files.md)); it never writes `config.yaml`. It is the program `tx-setup`
 (`plugins/setup/plugin.yaml`): `tx` itself carries none of its checklist, and it opens no core. No key.
 
 ## Retired ids

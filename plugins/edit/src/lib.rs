@@ -37,8 +37,8 @@ pub struct Ext {
     pub group: Option<String>,
 }
 
-const NO_SESSION: &str = "prefix+e: no tx session in this pane (view homes cannot be edited)";
-const NOT_MANAGED: &str = "prefix+e: the session in this pane is not tx-managed";
+const NO_SESSION: &str = "no tx session in this pane (view homes cannot be edited)";
+const NOT_MANAGED: &str = "the session in this pane is not tx-managed";
 
 /// Comma-separated tags; empty items are dropped.
 pub fn split_tags(s: &str) -> Vec<String> {
@@ -102,15 +102,16 @@ impl Verb for EditSession {
             return Ok(2);
         };
         let ui = Ui::from_core(core);
+        let label = tx_core::keys::label(core, PLUGIN_ID, "edit");
         let target = ui
             .inner_for_pane(pane)
             .or_else(|| ui.display_message("#{session_name}", Some(pane)));
         let Some(target) = target.filter(|target| !ui.is_view(target)) else {
-            ui.display_status(client, NO_SESSION);
+            ui.display_status(client, &format!("{label}: {NO_SESSION}"));
             return Ok(1);
         };
         let Ok(id) = core.resolve(&target) else {
-            ui.display_status(client, NOT_MANAGED);
+            ui.display_status(client, &format!("{label}: {NOT_MANAGED}"));
             return Ok(1);
         };
         let before = core.get_agent(&id)?;

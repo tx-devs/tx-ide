@@ -1,6 +1,6 @@
 ---
 tx:
-  skills: [tx-sessions, tx-artifacts]
+  skills: [tx-sessions, tx-artifacts, tx-mockup]
 ---
 
 # COMMON — every agent must follow this
@@ -66,3 +66,6 @@ or updating one, follow the `tx-artifacts` skill (shipped at
 `$TX_DATA_DIR/harness/skills/tx-artifacts/SKILL.md`). Never write under
 `$TX_DATA_DIR/plugins/artifacts/` by hand — revisions are immutable, and a direct edit desyncs the
 history from disk.
+
+When brainstorming needs a visual — a screen, layout, or animation — use the `tx-mockup` skill
+instead of the superpowers browser companion.

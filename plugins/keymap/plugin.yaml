@@ -3,6 +3,9 @@ id: keymap
 description: Prefix+?, a keyboard of the prefix shortcuts, coloured by who owns each key.
 tier: ide
 requires: [ide]
+settings:
+  keys:
+    open: "?"                    # prefix+?: the keyboard of the prefix shortcuts
 
 verbs:
   - name: keymap

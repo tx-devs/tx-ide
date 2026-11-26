@@ -132,7 +132,8 @@ fn source_in_pane(
         Some(Err(error)) => return Err(error.into()),
     };
     if source.is_none() {
-        ui.display_status(client, "prefix+f: no tx session in this pane");
+        let label = tx_core::keys::label(core, crate::CHAT_ID, "fork");
+        ui.display_status(client, &format!("{label}: no tx session in this pane"));
     }
     Ok(source)
 }

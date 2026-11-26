@@ -23,7 +23,7 @@ use crate::presets::Bundles;
 /// The header when the ticks are no preset's exact set.
 const CUSTOM: &str = "custom";
 const NOTHING: &str = "tx setup: nothing is selected (tick a plugin, or q to leave)";
-const LINK_DOTFILES: &str = "link ~/.config/nvim and ~/.tmux.conf to this checkout";
+const LINK_DOTFILES: &str = "link ~/.config/nvim, ~/.tmux.conf and the IDE keys to this checkout";
 const KEYS: &str = "j/k move   space toggle   1 headless   2 ide   3 full   enter accept   q leave";
 
 /// What a key did.
@@ -341,7 +341,7 @@ mod tests {
                 "  [x] ide     ide    The ide plugin.",
                 "  [x] labels  core   The labels plugin.  needs tx-setup-no-such-program (not found)",
                 "  [x] themes  extra  The themes plugin.",
-                "  [ ] link ~/.config/nvim and ~/.tmux.conf to this checkout",
+                "  [ ] link ~/.config/nvim, ~/.tmux.conf and the IDE keys to this checkout",
             ]
         );
     }

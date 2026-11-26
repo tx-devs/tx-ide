@@ -3,7 +3,10 @@ id: artifacts
 description: Durable versioned artifacts, effort groups, and the prefix+a menu.
 tier: core
 needs: [git, nvim]
-settings: { editor: nvim }
+settings:
+  editor: nvim                   # the program an artifact's view runs
+  keys:
+    menu: a                      # prefix+a: the artifacts of the agent in the active pane
 
 verbs:
   - name: artifact

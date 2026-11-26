@@ -29,6 +29,35 @@ fn exe() -> PathBuf {
     std::fs::canonicalize(env!("CARGO_BIN_EXE_tx")).unwrap()
 }
 
+/// Every default key, as the updater hands them to the fragments: fragment order (`ide` first,
+/// then by name), then each plugin's settings order.
+const DEFAULT_KEYS: &str = "set -g @tx-key-ide-pane_left 'C-h'\n\
+     set -g @tx-key-ide-pane_down 'C-j'\n\
+     set -g @tx-key-ide-pane_up 'C-k'\n\
+     set -g @tx-key-ide-pane_right 'C-l'\n\
+     set -g @tx-key-ide-scroll_up 'C-u'\n\
+     set -g @tx-key-ide-scroll_down 'C-d'\n\
+     set -g @tx-key-ide-window_next 'C-Tab'\n\
+     set -g @tx-key-ide-window_previous 'C-S-Tab'\n\
+     set -g @tx-key-ide-select_pane 'M-'\n\
+     set -g @tx-key-artifacts-menu 'a'\n\
+     set -g @tx-key-assistant-ask '/'\n\
+     set -g @tx-key-attention-next 'Space'\n\
+     set -g @tx-key-board-open 'b'\n\
+     set -g @tx-key-chat-fork 'f'\n\
+     set -g @tx-key-edit-edit 'e'\n\
+     set -g @tx-key-graph-open 'g'\n\
+     set -g @tx-key-home-open 'm'\n\
+     set -g @tx-key-keymap-open '?'\n\
+     set -g @tx-key-kill-kill 'X'\n\
+     set -g @tx-key-labels-sessions 's'\n\
+     set -g @tx-key-picker-open 't'\n\
+     set -g @tx-key-spawn-new_agent 'n'\n\
+     set -g @tx-key-switch-open 'P'\n\
+     set -g @tx-key-timeline-open 'T'\n";
+
+/// The composed conf. The config and data directories are one here, so `<config>/tmux.conf` is
+/// this file and is not sourced into itself.
 fn expected_conf(cli: &Cli) -> String {
     let state = cli.state();
     let state = state.display();
@@ -41,6 +70,7 @@ fn expected_conf(cli: &Cli) -> String {
          set -g @tx-data \"{state}\"\n\
          set -g @tx-arguments \"{arguments}\"\n\
          set-environment -g TX_BIN \"{exe}\"\n\
+         {DEFAULT_KEYS}\
          source-file \"{state}/conf/tmux.conf\"\n\
          source-file \"{state}/conf/theme.tmux\"\n\
          run-shell \"/usr/bin/env bash {state}/keys/ide.tmux\"\n\
@@ -279,6 +309,32 @@ fn update_materialises_resources() {
         );
     }
     assert!(installed.lines().any(|line| line.starts_with("ide\t")));
+    // Every key a plugin's table binds is declared by its fragment, so a reload can unbind it.
+    for line in DEFAULT_KEYS.lines() {
+        let (option, key) = line
+            .trim()
+            .strip_prefix("set -g @tx-key-")
+            .unwrap()
+            .split_once(' ')
+            .unwrap();
+        let key = key.trim_matches('\'');
+        let (id, _) = option.split_once('-').unwrap();
+        let record = installed
+            .lines()
+            .find(|line| line.starts_with(&format!("{id}\t")))
+            .unwrap();
+        let bound: Vec<&str> = record
+            .split('\t')
+            .filter_map(|field| field.strip_prefix("keys=").or(field.strip_prefix("root=")))
+            .flat_map(str::split_whitespace)
+            .collect();
+        let first = if key.ends_with('-') {
+            format!("{key}1")
+        } else {
+            key.to_owned()
+        };
+        assert!(bound.contains(&first.as_str()), "{option}: {record:?}");
+    }
 }
 
 #[test]
@@ -407,6 +463,49 @@ fn update_fragment_loads() {
     assert!(bound("prefix", "a").contains("tmux-artifact-menu"));
     assert!(bound("prefix", "T").contains("_timeline-open"));
     assert!(bound("prefix", "m").contains("_home-open"));
+    // Stock tmux keys stay; every tx key is bound from the option the updater wrote, with its note.
+    assert_eq!(cli.tmux_out(&["show-option", "-gv", "prefix"]), "C-b");
+    assert!(bound("prefix", "-").contains("delete-buffer"));
+    assert!(bound("prefix", "l").contains("last-window"));
+    assert!(bound("prefix", "|").is_empty());
+    assert!(bound("prefix", "M-1").contains("select-layout"));
+    assert_eq!(
+        cli.tmux_out(&["show-option", "-gv", "@tx-key-picker-open"]),
+        "t"
+    );
+    assert!(bound("root", "C-h").contains("tmux-nav"));
+    assert!(bound("prefix", "C-h").contains("send-prefix"));
+    assert!(bound("root", "C-u").contains("PageUp"));
+    assert!(bound("root", "C-Tab").contains("next-window"));
+    assert!(bound("root", "C-S-Tab").contains("previous-window"));
+    assert!(bound("root", "M-9").contains("select-pane -t 9"));
+    assert!(bound("prefix", "/").contains("tx-assistant"));
+    assert!(bound("prefix", "f").contains("tmux-fork-tx-session"));
+    assert!(bound("prefix", "g").contains("_graph-open"));
+    assert!(bound("prefix", "Space").contains("attention next"));
+    assert!(bound("prefix", "?").contains("keymap"));
+    assert!(bound("prefix", "a").contains("send-prefix"));
+    let notes = cli.tmux_out(&["list-keys", "-N", "-T", "prefix"]);
+    for note in [
+        "Find an agent or view",
+        "Agents waiting for you",
+        "Show the shortcuts",
+        "Artifacts of this session",
+        "Send C-h to the program",
+    ] {
+        assert!(notes.contains(note), "{note}: {notes}");
+    }
+    let ide = installed(&cli)
+        .lines()
+        .find(|line| line.starts_with("ide\t"))
+        .unwrap()
+        .to_owned();
+    assert!(
+        ide.starts_with(
+            "ide\tkeys=C-h C-j C-k C-l\troot=C-h C-j C-k C-l C-u C-d C-Tab C-S-Tab M-1 "
+        ),
+        "{ide:?}"
+    );
     cli.tmux(&["kill-server"]);
 }
 
@@ -601,10 +700,13 @@ fn disabling_ide_gives_the_config_back_to_core() {
     assert!(!cli.state().join("keys/ide.tmux").exists());
     assert!(cli.state().join("keys/kill.tmux").is_file());
 
-    // Safe to repeat: nothing is left to take back, and a config edited since stays.
-    std::fs::write(cli.conf(), "# my own\n").unwrap();
+    // Safe to repeat: nothing is left to take back, and a config edited since stays. (It keeps
+    // tx's header: with one directory as config and data, a file without it is the user's own
+    // tmux.conf, which `tx update` refuses to overwrite.)
+    let edited = format!("{}, edited by hand\n", tx_core::core::TMUX_CONF_HEADER);
+    std::fs::write(cli.conf(), &edited).unwrap();
     assert_eq!(cli.ok(&["update"]), updated(&[]));
-    assert_eq!(std::fs::read_to_string(cli.conf()).unwrap(), "# my own\n");
+    assert_eq!(std::fs::read_to_string(cli.conf()).unwrap(), edited);
 
     std::fs::remove_file(cli.state().join("config.yaml")).unwrap();
     assert_eq!(
@@ -649,8 +751,19 @@ fn disabling_ide_takes_the_keys_out_of_a_running_server_and_enabling_it_brings_t
     assert!(!format.contains("_pane-label"), "{format:?}");
     let hook = cli.tmux_out(&["show-hooks", "-g", "after-new-window"]);
     assert!(!hook.contains("@tx-view"), "{hook:?}");
-    // What the composed config's own first lines set went with the keys.
-    for option in ["@tx-bin", "@tx-data", "@tx-arguments"] {
+    // The root keys the record lists went too.
+    for key in ["C-h", "C-u", "C-Tab", "M-1"] {
+        let root = cli.tmux_out(&["list-keys", "-T", "root", key]);
+        assert!(root.is_empty(), "{key}: {root:?}");
+    }
+    // What the composed config's own first lines set went with the keys, the key options too.
+    for option in [
+        "@tx-bin",
+        "@tx-data",
+        "@tx-arguments",
+        "@tx-key-picker-open",
+        "@tx-key-ide-select_pane",
+    ] {
         assert_eq!(
             cli.tmux_out(&["show-option", "-gqv", option]),
             "",
@@ -1504,5 +1617,245 @@ fn attach_to_picks_a_pane_by_number_and_enter_attaches_there() {
     );
     assert_eq!(table(), "root");
     assert_eq!(border(), "");
+    cli.tmux(&["kill-server"]);
+}
+
+#[test]
+fn a_moved_key_is_unbound_and_a_null_key_binds_nothing_on_reload() {
+    require_tmux!();
+    let cli = Cli::new();
+    cli.ok(&["update"]);
+    start_server(&cli);
+    cli.write_yaml(
+        "plugins:\n  picker: { settings: { keys: { open: p } } }\n  \
+         kill: { settings: { keys: { kill: null } } }\n  \
+         ide: { settings: { keys: { pane_left: M-h, select_pane: C-M- } } }\n",
+    );
+    let out = cli.ok(&["update"]);
+    assert!(out.contains("reloaded"), "{out:?}");
+    let bound = |table: &str, key: &str| cli.tmux_out(&["list-keys", "-T", table, key]);
+    assert!(cli.wait_for(5, || bound("prefix", "p").contains("pick")));
+    assert!(!bound("prefix", "t").contains("pick"));
+    assert!(!bound("prefix", "X").contains("kill"));
+    assert_eq!(
+        cli.tmux_out(&["show-option", "-gv", "@tx-key-kill-kill"]),
+        ""
+    );
+    assert!(bound("root", "M-h").contains("tmux-nav"));
+    assert!(bound("prefix", "M-h").contains("send-prefix"));
+    assert!(!bound("root", "C-h").contains("tmux-nav"));
+    assert!(!bound("prefix", "C-h").contains("send-prefix"));
+    assert!(bound("root", "C-M-1").contains("select-pane -t 1"));
+    assert!(bound("root", "M-1").is_empty());
+    let installed = installed(&cli);
+    assert!(installed.contains("picker\tkeys=p\t"), "{installed:?}");
+    assert!(installed.contains("kill\tkeys=\t"), "{installed:?}");
+    let config = cli.ok(&["config"]);
+    assert!(config.contains("open: p"), "{config}");
+    assert!(config.contains("pane_left: M-h"), "{config}");
+    cli.tmux(&["kill-server"]);
+}
+
+#[test]
+fn a_key_setting_tx_cannot_bind_is_refused_naming_plugin_and_key() {
+    let cli = Cli::new();
+    for (yaml, plugin, names) in [
+        (
+            "plugins:\n  picker: { settings: { keys: { open: two words } } }\n",
+            "picker",
+            "keys.open",
+        ),
+        (
+            "plugins:\n  picker: { settings: { keys: { opne: p } } }\n",
+            "picker",
+            "keys.opne",
+        ),
+        (
+            "plugins:\n  ide: { settings: { keys: { select_pane: M-1 } } }\n",
+            "ide",
+            "keys.select_pane",
+        ),
+    ] {
+        cli.write_yaml(yaml);
+        for args in [&["ls"][..], &["config"][..], &["update"][..]] {
+            let output = cli.run(args, &[], "");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(!output.status.success(), "{args:?} {yaml}");
+            assert!(
+                stderr.contains(plugin) && stderr.contains(names),
+                "{args:?}: {stderr}"
+            );
+        }
+    }
+}
+
+/// A sandbox whose config directory is a directory of its own, `<dir>/config`: the flag that
+/// says so, and the directory.
+fn own_config(cli: &Cli) -> (String, PathBuf) {
+    let config = cli.dir.path().join("config");
+    std::fs::create_dir_all(&config).unwrap();
+    (config.to_str().unwrap().to_owned(), config)
+}
+
+#[test]
+fn the_users_tmux_conf_is_sourced_last_and_wins() {
+    require_tmux!();
+    let cli = Cli::new();
+    let (config_flag, config) = own_config(&cli);
+    let update = || cli.ok(&["--config-dir", &config_flag, "update"]);
+    update();
+    let conf = std::fs::read_to_string(cli.conf()).unwrap();
+    assert!(
+        conf.ends_with(&format!(
+            "keys/timeline.tmux\"\nsource-file -q \"{}/tmux.conf\"\n",
+            config.display()
+        )),
+        "{conf}"
+    );
+    // A missing file is silent.
+    start_server(&cli);
+    assert_eq!(cli.tmux_out(&["show-option", "-gv", "prefix"]), "C-b");
+    cli.tmux(&["kill-server"]);
+
+    std::fs::write(
+        config.join("tmux.conf"),
+        "set -g prefix C-a\nbind t display-message mine\n",
+    )
+    .unwrap();
+    assert!(
+        cli.tmux_with_conf(&["new-session", "-d", "-s", "probe", "sleep", "60"])
+            .status
+            .success()
+    );
+    let mine = || {
+        cli.tmux_out(&["show-option", "-gv", "prefix"]) == "C-a"
+            && cli
+                .tmux_out(&["list-keys", "-T", "prefix", "t"])
+                .contains("mine")
+    };
+    assert!(cli.wait_for(5, mine), "the user's file lost on start");
+    assert!(update().contains("reloaded"));
+    assert!(mine(), "the user's file lost on reload");
+    cli.tmux(&["kill-server"]);
+}
+
+/// Two actions on one key: the later fragment would take it from the earlier one without a
+/// word, so the updater refuses, naming both settings, before it writes anything.
+#[test]
+fn one_key_for_two_actions_is_refused_naming_both_settings() {
+    let cli = Cli::new();
+    cli.write_yaml("plugins:\n  home: { settings: { keys: { open: n } } }\n");
+    let stderr = cli.fails(&["update"], 1);
+    assert!(stderr.contains("prefix+n is set for both"), "{stderr}");
+    assert!(
+        stderr.contains("plugins.spawn.settings.keys.new_agent")
+            && stderr.contains("plugins.home.settings.keys.open"),
+        "{stderr}"
+    );
+    assert!(
+        !cli.state().join("keys/.installed").exists(),
+        "nothing recorded"
+    );
+    let conf = std::fs::read_to_string(cli.conf()).unwrap_or_default();
+    assert!(!conf.contains("@tx-bin"), "nothing composed: {conf:?}");
+    // tmux reads `c-t` as `C-t`: another spelling of a taken key collides too.
+    cli.write_yaml(
+        "plugins:\n  picker: { settings: { keys: { open: C-t } } }\n  \
+         home: { settings: { keys: { open: c-t } } }\n",
+    );
+    assert!(cli.fails(&["update"], 1).contains("is set for both"));
+    // The root table and the prefix table are separate: only the same table collides.
+    cli.write_yaml("plugins:\n  ide: { settings: { keys: { scroll_up: C-d } } }\n");
+    let stderr = cli.fails(&["update"], 1);
+    assert!(stderr.contains("C-d is set for both"), "{stderr}");
+    assert!(!stderr.contains("prefix+C-d"), "{stderr}");
+}
+
+/// An error in the user's own tmux.conf is reported as tmux words it, file and line, and the
+/// record of what is bound is written all the same: tx's own part of the reload was applied.
+#[test]
+fn an_error_in_the_users_tmux_conf_is_reported_with_its_file_and_line() {
+    require_tmux!();
+    let cli = Cli::new();
+    let (config_flag, config) = own_config(&cli);
+    cli.ok(&["--config-dir", &config_flag, "update"]);
+    start_server(&cli);
+    std::fs::write(config.join("tmux.conf"), "set -g @mine yes\nbind-key\n").unwrap();
+    std::fs::write(
+        config.join("config.yaml"),
+        "plugins:\n  picker: { settings: { keys: { open: p } } }\n",
+    )
+    .unwrap();
+    let stderr = cli.fails(&["--config-dir", &config_flag, "update"], 1);
+    assert!(
+        stderr.contains(&format!("{}/tmux.conf:2:", config.display())),
+        "{stderr}"
+    );
+    assert!(installed(&cli).contains("picker\tkeys=p\t"), "{stderr}");
+    assert!(
+        cli.tmux_out(&["list-keys", "-T", "prefix", "p"])
+            .contains("pick")
+    );
+    cli.tmux(&["kill-server"]);
+}
+
+/// One directory as both config and data: the user's tmux.conf is where tx writes its own, and
+/// their nvim/tx.lua where it prunes. The update refuses, before it publishes anything, instead
+/// of destroying either.
+#[test]
+fn a_users_file_in_a_directory_that_is_also_data_is_not_destroyed() {
+    let cli = Cli::new();
+    std::fs::create_dir_all(cli.state().join("nvim")).unwrap();
+    for (file, text) in [
+        ("tmux.conf", "# MY OWN\n"),
+        ("nvim/tx.lua", "vim.g.mine = 1\n"),
+    ] {
+        let path = cli.state().join(file);
+        std::fs::write(&path, text).unwrap();
+        let stderr = cli.fails(&["update"], 1);
+        assert!(
+            stderr.contains(&format!("{} is your own file", path.display())),
+            "{stderr}"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        assert!(!cli.state().join("keys").exists(), "nothing published");
+        std::fs::remove_file(&path).unwrap();
+    }
+    // The file tx generated itself is not the user's: a second update overwrites it.
+    cli.ok(&["update"]);
+    cli.ok(&["update"]);
+}
+
+/// A record from before root keys were recorded cannot say which root keys to unbind: the
+/// update says to restart the server.
+#[test]
+fn a_record_without_root_keys_gets_the_restart_hint() {
+    require_tmux!();
+    let cli = Cli::new();
+    cli.ok(&["update"]);
+    start_server(&cli);
+    let path = cli.state().join("keys/.installed");
+    let old: String = installed(&cli)
+        .lines()
+        .map(|line| {
+            line.split('\t')
+                .filter(|field| !field.starts_with("root="))
+                .collect::<Vec<_>>()
+                .join("\t")
+                + "\n"
+        })
+        .collect();
+    std::fs::write(&path, old).unwrap();
+    let out = cli.ok(&["update"]);
+    assert_eq!(
+        out,
+        updated(&[
+            &cli.conf().display().to_string(),
+            "reloaded",
+            "legacy bindings may remain; restart the server to drop them",
+        ])
+    );
+    assert!(installed(&cli).contains("\troot="));
+    assert!(!cli.ok(&["update"]).contains("legacy"));
     cli.tmux(&["kill-server"]);
 }

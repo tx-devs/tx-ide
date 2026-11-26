@@ -80,7 +80,8 @@ impl Verb for HomeVerb {
         let Some((Some(pane), Some(client))) = here else {
             let _ = writeln!(
                 io.stderr,
-                "tx home: run it inside tx-ide (`tx ui attach`), or press prefix+m there"
+                "tx home: run it inside tx-ide (`tx ui attach`), or press {} there",
+                tx_core::keys::label(core, crate::PLUGIN_ID, "open")
             );
             return Ok(1);
         };

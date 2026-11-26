@@ -3,6 +3,9 @@ id: chat
 description: "tx-core plugin `chat`: prefix+f fork, `chat ls`, `doctor --fix-hooks`."
 tier: core
 needs: [fzf]
+settings:
+  keys:
+    fork: f                      # prefix+f: fork the agent in the active pane
 
 verbs:
   - name: chat

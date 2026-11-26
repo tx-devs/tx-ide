@@ -13,10 +13,6 @@ pub const PLUGIN_ID: &str = "tx-core";
 pub const SHIPPED: &[(&str, &[u8])] = &[
     ("agents/COMMON.md", include_bytes!("../agents/COMMON.md")),
     (
-        "agents/COMMON.local.md",
-        include_bytes!("../agents/COMMON.local.md"),
-    ),
-    (
         "agents/TX-ASSISTANT.md",
         include_bytes!("../agents/TX-ASSISTANT.md"),
     ),

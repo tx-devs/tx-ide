@@ -1911,6 +1911,7 @@ version = "0.1.0"
 dependencies = [
  "ratatui",
  "serde_json",
+ "serde_norway",
  "tempfile",
  "tx-chat",
  "tx-client",
@@ -1944,6 +1945,7 @@ dependencies = [
 name = "tx-ide"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "tempfile",
  "tx-client",
  "tx-core",

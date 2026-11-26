@@ -154,11 +154,27 @@ steps. It runs on every `tx update`, so it must be idempotent.
 
 **A key** is a `keys/<id>.tmux` resource: a script the server's config (written by `tx update`)
 runs through the interpreter its first line names, never by executing the file (the first direct
-run of a new executable file is slow on macOS). A comment near its top declares the prefix keys
-it binds, `# keys: <key>` (`none` for root-table binds only); if it sets global options or hooks
-it also declares `# unset: …` and `# unhook: …` so that disabling the plugin undoes them. It
-finds `tx` and its flags through the server options `@tx-bin` and `@tx-arguments`, as every
-shipped fragment does. Helper scripts go in as `bin/<file>` resources.
+run of a new executable file is slow on macOS). Which key it binds is not written in it: the
+manifest's `settings:` hold a `keys` table, action name to tmux key, which the user can move or
+`null` in `config.yaml`:
+
+```yaml
+settings:
+  keys:
+    open: N                      # prefix+N: the notes in a popup
+```
+
+`tx update` writes each entry into the server option `@tx-key-<id>-<action>` before the fragments
+run, and the fragment binds whatever key that option holds, nothing when it is empty, quoted as
+`'$KEY'` and with a `-N` note. A comment near the top names the actions it binds, `# keys:
+<action> …` in the prefix table and `# root-keys: <action> …` in the root table, so a reload can
+unbind a key that moved; if it sets global options or hooks it also declares `# unset: …` and
+`# unhook: …` so that disabling the plugin undoes them. Its first prose sentence, with no key in
+it, is the home's `?` hint. It finds `tx` and its flags through the server options `@tx-bin` and
+`@tx-arguments`, as every shipped fragment does, and re-sends the prefix with `send-prefix`, never
+by reading the `prefix` option when it runs: the user's `<config>/tmux.conf` is sourced after it
+and may set another. A message that names the key reads it with `tx_core::keys::label`. Helper
+scripts go in as `bin/<file>` resources.
 
 **Tests.** `tests/bundle.rs` is one call, `tx_core::testing::check_bundle`: the manifest
 reads, every resource is a file of the package, every `bin` is a program it builds, and the

@@ -326,7 +326,7 @@ fn update_binds_prefix_f() {
         0o755
     );
     let fragment = std::fs::read_to_string(state.join("keys/chat.tmux")).unwrap();
-    assert_eq!(fragment.lines().nth(1), Some("# keys: f"));
+    assert_eq!(fragment.lines().nth(1), Some("# keys: fork"));
     let conf = state.join("tmux.conf");
     let server = |args: &[&str]| {
         std::process::Command::new("tmux")

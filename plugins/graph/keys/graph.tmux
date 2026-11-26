@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# keys: g
-# tx key plugin `graph`: prefix+g opens the resident agent graph in a popup that fills most of the
+# keys: open
+# tx key plugin `graph`: opens the resident agent graph in a popup that fills most of the
 # screen (`_graph-open`); q detaches it while the resident (its log position and transcript reads)
 # stays warm. Enter (show the agent: its pane, else nested into this pane when the picker would
 # nest there, else the client switched) and a (its artifacts) close the popup and happen on the
 # terminal. Run by `run-shell` from the server's tmux.conf, which `tx update` writes.
 #
 # Composes a tmux.conf fragment and source-file's it, so tmux's own parser handles the quoting.
-# Anything the user re-binds later in their own tmux.conf wins, since tmux is last-write-wins.
+# The user's own <config>/tmux.conf is sourced after every fragment, so anything it re-binds wins.
 set -u
 
 TX_BIN=$(tmux show-option -gv @tx-bin 2>/dev/null)
@@ -16,11 +16,16 @@ ARGUMENTS=$(tmux show-option -gv @tx-arguments 2>/dev/null)
 [ -n "$TX_BIN" ] || exit 0
 TX="$TX_BIN $ARGUMENTS"
 
+# The key is the plugin's `keys.open` setting, which `tx update` writes into this option;
+# empty when the user unbound it.
+KEY=$(tmux show-option -gqv @tx-key-graph-open)
+[ -n "$KEY" ] || exit 0
+
 CONF=$(mktemp -t tx-graph-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
 
 cat >>"$CONF" <<EOF2
-bind -N "Agent graph" g run-shell -b "$TX _graph-open '#{pane_id}' '#{client_name}' >/dev/null 2>&1 || true"
+bind -N "Agent graph" '$KEY' run-shell -b "$TX _graph-open '#{pane_id}' '#{client_name}' >/dev/null 2>&1 || true"
 EOF2
 
 tmux source-file "$CONF"

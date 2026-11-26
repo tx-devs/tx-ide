@@ -54,9 +54,6 @@ pub const FAILURE_FILE: &str = "warm.failed";
 const WARM_LOCK_FILE: &str = "warm.lock";
 /// The paste buffer prefix+/ fills on the core's server; `ask --from-buffer` reads and deletes it.
 pub const INPUT_BUFFER: &str = "tx-assistant-input";
-/// What the envelope names as where the operator typed, for a line with no firing pane to name
-/// (`ask TEXT…`, or a pane gone before it was read).
-pub const VIA: &str = "prefix+/";
 /// How long `ask` waits for a freshly started assistant to leave `starting`, so the line is typed
 /// into a running engine rather than a loading one.
 pub const START_TIMEOUT: Duration = Duration::from_secs(20);
@@ -82,12 +79,17 @@ impl Default for Settings {
 }
 
 impl Settings {
-    /// No settings (`null`) are the defaults; an unknown key or a wrong type is refused.
+    /// No settings (`null`) are the defaults; an unknown key or a wrong type is refused. `keys`,
+    /// the plugin's key table, is the IDE's to read (`tx_core::keys`) and is left alone here.
     pub fn from_value(value: &serde_json::Value) -> Result<Self, PluginError> {
         if value.is_null() {
             return Ok(Self::default());
         }
-        serde_json::from_value(value.clone()).map_err(|error| PluginError::Register {
+        let mut value = value.clone();
+        if let Some(settings) = value.as_object_mut() {
+            settings.remove(tx_core::keys::KEYS);
+        }
+        serde_json::from_value(value).map_err(|error| PluginError::Register {
             plugin: PLUGIN_ID.to_owned(),
             reason: format!("settings: {error}"),
         })
@@ -251,7 +253,9 @@ fn start(core: &TxCore, settings: &Settings) -> Result<AgentId, CoreError> {
 }
 
 /// Delivers `text` to the running assistant (started when there is none) as the operator. Typed
-/// in `pane`: via that pane's session, behind its focus envelope; else via `VIA`. A new
+/// in `pane`: via that pane's session, behind its focus envelope; else via the key that asks
+/// (`prefix+/`, [`tx_core::keys::label`]): a line with no firing pane to name (`ask TEXT…`, or a
+/// pane gone before it was read). A new
 /// assistant is given `START_TIMEOUT` to report a state past `starting`; the line goes out either
 /// way, since the engine queues input typed while it works.
 pub fn ask(
@@ -263,7 +267,10 @@ pub fn ask(
     let ui = Ui::from_core(core);
     let (via, text) = match pane.and_then(|pane| focus::focus(&ui, pane)) {
         Some(focus) => (focus.session_name, format!("{} {text}", focus.envelope)),
-        None => (VIA.to_owned(), text.to_owned()),
+        None => (
+            tx_core::keys::label(core, PLUGIN_ID, "ask"),
+            text.to_owned(),
+        ),
     };
     let id = warm(core, settings)?;
     let deadline = Instant::now() + START_TIMEOUT;
@@ -380,6 +387,14 @@ mod tests {
                 effort: "2".to_owned(),
             }
         );
+    }
+
+    #[test]
+    fn the_key_table_is_accepted_and_not_read() {
+        let settings =
+            Settings::from_value(&json!({"model": "sonnet", "keys": {"ask": "/"}})).unwrap();
+        assert_eq!(settings.model, "sonnet");
+        assert!(Settings::from_value(&json!({"keyz": {}})).is_err());
     }
 
     #[test]

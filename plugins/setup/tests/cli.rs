@@ -1,7 +1,7 @@
 //! `tx-setup` as it is run, without a terminal: what it prints, what it records in
-//! `<data>/shipped/.selection`, and the `config.yaml` it seeds once.
+//! `<data>/shipped/.selection`, and the `config.yaml` it never writes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 
 use tx_core::host::bundle::Selection;
@@ -174,37 +174,26 @@ fn list_prints_every_preset_shipped_first_and_writes_nothing() {
     assert!(!sandbox.config_file().exists());
 }
 
+/// The config file is the user's: no selection writes it, the first one included. The plugins'
+/// default settings are read from their manifests when tx runs.
 #[test]
-fn a_preset_is_recorded_printed_and_seeds_the_config_once() {
+fn a_preset_is_recorded_printed_and_writes_no_config() {
     let sandbox = Sandbox::new();
     let run = sandbox.ok(&["--preset", "ide"]);
     let ids = ["engine", "home", "ide", "labels"];
     assert_eq!(run.stdout, plugin_lines(&ids));
     assert_eq!(run.stderr, "");
     assert_eq!(sandbox.selection(), selected(Some("ide"), &ids));
+    assert!(!sandbox.config_file().exists());
 
-    let text = std::fs::read_to_string(sandbox.config_file()).unwrap();
-    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../config/tx-ide/config.yaml");
-    let defaults = std::fs::read_to_string(repository).unwrap();
-    let plugins = text
-        .strip_prefix(&defaults)
-        .expect("the repository's file comes first");
-    assert!(
-        plugins.ends_with(
-            "plugins:\n  engine: { enabled: true }\n  home:\n    enabled: true\n    settings:\n      \
-             theme: koi\n  ide: { enabled: true }\n  labels: { enabled: true }\n"
-        ),
-        "{plugins}"
-    );
-    let config = tx_core::host::user_config::parse(&text, &sandbox.config_file()).unwrap();
-    assert_eq!(config.plugins.len(), 4);
-
-    // A second run changes the selection and leaves the file alone.
+    // A file that is there is left exactly as it is.
+    std::fs::create_dir_all(sandbox.config_file().parent().unwrap()).unwrap();
+    std::fs::write(sandbox.config_file(), "agent: { effort: 4 }\n").unwrap();
     sandbox.ok(&["--preset", "full"]);
     assert_eq!(sandbox.selection(), selected(Some("full"), &ALL));
     assert_eq!(
         std::fs::read_to_string(sandbox.config_file()).unwrap(),
-        text
+        "agent: { effort: 4 }\n"
     );
 }
 
@@ -412,11 +401,11 @@ fn without_a_terminal_and_without_a_choice_it_is_full() {
     let run = sandbox.ok(&[]);
     assert_eq!(run.stdout, plugin_lines(&ALL));
     assert_eq!(sandbox.selection(), selected(Some("full"), &ALL));
-    assert!(sandbox.config_file().exists());
+    assert!(!sandbox.config_file().exists());
 }
 
 #[test]
-fn an_upgrade_resolves_the_recorded_preset_again_and_never_seeds_the_config() {
+fn an_upgrade_resolves_the_recorded_preset_again_and_writes_no_config() {
     let sandbox = Sandbox::new();
     sandbox.record(Some("full"), &["engine"]);
     sandbox.bundle("extra1", "");

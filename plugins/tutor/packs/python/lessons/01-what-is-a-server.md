@@ -22,8 +22,11 @@ You are inside a tx **view** called `tutor-python`: a tmux session with four pan
 How keys are written in these lessons:
 
 - `C-l` means hold **Ctrl** and press `l` — one chord, **no prefix** first.
-- `prefix+t` means press your tmux **prefix** (`C-b` by default; the cheat sheet shows yours),
-  release it, then press `t`.
+- `prefix+t` means press your tmux **prefix** (tmux's own `C-b` unless your
+  `~/.config/tx-ide/tmux.conf` sets another; the cheat sheet shows yours), release it, then
+  press `t`.
+- These are tx-ide's default keys. Each is a setting you can move (`tx config` lists them all);
+  if you moved one, use yours wherever a lesson names the default.
 - Careful: if your tmux config binds `prefix` + `h/j/k/l` to resize panes (a common setup),
   pressing the prefix before `C-h/j/k/l` resizes instead of moving. Just use Ctrl alone.
 

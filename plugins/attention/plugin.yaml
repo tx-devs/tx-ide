@@ -3,7 +3,14 @@ id: attention
 description: The agents that need the operator, on the status line, notified, and one key away (prefix+Space).
 tier: ide
 requires: [ide]
-settings: { finished: own, message: true, desktop: waiting, sound: false, command: null }
+settings:
+  finished: own                  # which finished agents are marked: own (the ones you started), all, none
+  message: true                  # a line on the terminal's status line
+  desktop: waiting               # which marks raise a desktop notification: waiting, all, none
+  sound: false                   # the terminal bell
+  command: null                  # your own notifier, run instead of the desktop notification
+  keys:
+    next: Space                  # prefix+Space: the first agent that needs you
 
 verbs:
   - name: attention

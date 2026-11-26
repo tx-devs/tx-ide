@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# keys: s
+# keys: sessions
 # unset: pane-border-format
 # unhook: after-new-window
-# tx key plugin `labels`: prefix+s lists sessions with their names and tags (choose-tree), and
+# tx key plugin `labels`: lists sessions with their names and tags (choose-tree), and
 # each pane border carries the nested session's label. Run by `run-shell` from the server's
 # tmux.conf, which `tx update` writes. The border's look (style, lines, indicators) is the
 # `ide` plugin's; this fragment owns only the format and the hook that turns borders on in views.
 #
 # Composes a tmux.conf fragment and source-file's it, so tmux's own parser handles multi-command
-# binds correctly. Anything the user re-binds later in their own tmux.conf wins, since tmux is
-# last-write-wins.
+# binds correctly. The user's own <config>/tmux.conf is sourced after every
+# fragment, so anything it re-binds wins.
 set -u
 
 TX_BIN=$(tmux show-option -gv @tx-bin 2>/dev/null)
@@ -17,6 +17,11 @@ ARGUMENTS=$(tmux show-option -gv @tx-arguments 2>/dev/null)
 [ -n "$ARGUMENTS" ] || exit 0
 [ -n "$TX_BIN" ] || exit 0
 TX="$TX_BIN $ARGUMENTS"
+
+# The key is the plugin's `keys.sessions` setting, which `tx update` writes into this option;
+# empty when the user unbound it.
+KEY=$(tmux show-option -gqv @tx-key-labels-sessions)
+[ -n "$KEY" ] || exit 0
 
 CONF=$(mktemp -t tx-labels-keys.XXXXXX)
 trap 'rm -f "$CONF"' EXIT
@@ -41,7 +46,7 @@ set-hook -g after-new-window "if-shell -F '#{@tx-view}' 'setw pane-border-status
 EOF2
 
 cat >>"$CONF" <<EOF2
-bind -N "Switch session" s {
+bind -N "Switch session" '$KEY' {
   run-shell "$TX _relabel"
   choose-tree -Zs -F '#{?session_format,#{?@tx-name,#{@tx-name}  ,}#{session_windows}w#{?session_attached, (attached),},#{?window_format,#{window_index}: #{window_name},#{pane_current_command}}}'
 }

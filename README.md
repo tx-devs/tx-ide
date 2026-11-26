@@ -61,7 +61,7 @@ install                          # on a terminal: the checklist; 1, 2, 3 tick a 
 install --preset headless        # a preset: headless, ide, full, or one of your own
 install --plugins mockup,tour    # exactly these, and the plugins they require
 install --yes                    # ask nothing: full
-install --link-dotfiles          # also link ~/.config/nvim and ~/.tmux.conf to config/
+install --link-dotfiles          # also link ~/.config/nvim, ~/.tmux.conf and the IDE keys to config/
 install --upgrade                # after a git pull: the same selection, rebuilt
 ```
 
@@ -78,18 +78,20 @@ selection is not installed: its verbs are unknown to `tx`.
   `<data>/shipped/.selection`. The same `tx update` runs the pending update steps, publishes the
   shipped roles and harness and every plugin's keys and scripts under the data directory, and
   runs each plugin's updater (the IDE's tmux config).
-- `~/.config/tx-ide/config.yaml`, written once by `tx setup` with every default spelled out and
-  the selected plugins. A file that exists is never touched.
+- Nothing under `~/.config/tx-ide`: that directory is yours. tx's defaults come with the binary
+  and the plugins, and what you put there is laid over them (see [Configuration](#configuration)).
 - Your dotfiles are left alone unless you ask: with `--link-dotfiles`, or the checklist's last
-  row, `~/.config/nvim` and `~/.tmux.conf` become links to this repository's `config/nvim` and
-  `config/tmux.conf` (what was there moves to `<path>.bak.<stamp>`).
+  row, `~/.config/nvim`, `~/.tmux.conf` and `~/.config/tx-ide/tmux.conf` become links to this
+  repository's `config/nvim`, `config/tmux.conf` and `config/tx-ide/tmux.conf`, the maintainer's
+  own editor, tmux setup and IDE keys (what was there moves to `<path>.bak.<stamp>`). tx needs
+  none of them.
 
 It is safe to re-run; a run with another `--preset` or `--plugins` changes the selection, and
 `tx update` removes the plugins that left it.
 
 **Upgrading.** `git pull`, then `install --upgrade`. It asks nothing, resolves the recorded
 preset again (so a plugin that is new in `full` arrives), rebuilds and lays everything out, and
-never writes `config.yaml` or a dotfile. After rebuilding `tx` by hand, run `tx update`: it runs
+never links a dotfile. After rebuilding `tx` by hand, run `tx update`: it runs
 the update steps a newer tx needs, such as moving files (the last one run is in
 `<data>/update-version`; other verbs warn while one is pending), publishes the roles, harness
 and plugin resources again, then reinstalls the tmux config, which names the binary's path. With
@@ -104,7 +106,7 @@ that last step runs when `chat` is selected).
 
 ## First steps
 
-The prefix is `C-a`.
+The prefix is tmux's own, `C-b`, unless your `~/.config/tx-ide/tmux.conf` sets another.
 
 ```sh
 tx ui attach
@@ -117,8 +119,8 @@ attach also starts the assistant in the background.
   shell, `tx create NAME --cwd DIR --prompt TEXT`. The agent runs in its own worktree of DIR's
   checkout at `HEAD`, as the `developer` definition unless told otherwise, and makes its own
   branch there.
-- **Go in and out**: Enter on an agent nests its terminal into the home's pane. `C-a C-a d`
-  detaches the nested agent and the home comes back; the agent keeps running. `C-a d` detaches the
+- **Go in and out**: Enter on an agent nests its terminal into the home's pane. prefix, prefix, `d`
+  detaches the nested agent and the home comes back; the agent keeps running. prefix, `d` detaches the
   terminal itself; `tx ui attach` brings everything back as it was.
 - **Talk**: type into the agent, or `tx send NAME -- TEXT` from anywhere (run inside an agent, the
   message is signed as that agent). prefix+/ asks the assistant one line from any pane.
@@ -146,10 +148,16 @@ attach also starts the assistant in the background.
 | prefix+Space | go to the next agent that needs you |
 | prefix+a | in an agent: the artifacts it touched, its parent and children; in a view: back to its agent |
 | prefix+s | refresh the labels, then `choose-tree` |
-| prefix+\| / prefix+- | split right / below |
+| prefix+? | a keyboard of the prefix keys: tx's, tmux's and free ones |
 | C-h / C-j / C-k / C-l | move between nvim splits and panes, out of nested sessions too |
 | C-u / C-d | page an agent's scrollback |
-| C-a C-a d | leave a nested agent or view; it keeps running |
+| C-Tab / C-S-Tab, M-1..9 | next / previous window; pane 1-9 |
+| prefix prefix d | leave a nested agent or view; it keeps running |
+
+The prefix is tmux's own (`C-b` unless your `~/.config/tx-ide/tmux.conf` sets another). Every key in
+this table except the last is a setting of the plugin that owns it (`tx config` lists them), and
+tmux's own keys (splits, layouts, copy mode) are tmux's defaults; see
+[the tmux layer](docs-site/guide/src/tmux-and-views.md#keys) to move or drop a key or add your own.
 
 In the home: j/k move, Enter attaches (or resumes an ended agent), → unfolds an agent's detail, n
 starts an agent, x stops one, r resumes one, a its artifacts, / asks the assistant, f finds, w the
@@ -169,7 +177,8 @@ the popup. The graph lists its keys on `?`.
 | `tx show NAME`, `tx where NAME`, `tx attach NAME` | its record as JSON; its tmux socket, session and pane; attach this terminal to it |
 | `tx rename NAME NEW`, `tx tag NAME TAG…` | rename it; replace its tags |
 | `tx gc [--older-than 1d] [--dry-run]` | delete the build output (`worktree.build_outputs`) in the worktrees of agents that ended longer ago than that |
-| `tx setup [--bundles DIR] [--preset NAME \| --plugins a,b,c \| --upgrade] [--list]` | choose which shipped plugins this machine has (a preset, ids, or a checklist on a terminal), record the selection in `<data>/shipped/.selection` and seed `config.yaml` when there is none |
+| `tx config [--defaults \| --path]` | the settings in use: your `config.yaml` laid over tx's defaults, your values marked; `--defaults`: every default with its documentation; `--path`: your file |
+| `tx setup [--bundles DIR] [--preset NAME \| --plugins a,b,c \| --upgrade] [--list]` | choose which shipped plugins this machine has (a preset, ids, or a checklist on a terminal), record the selection in `<data>/shipped/.selection` |
 | `tx harness ls`, `tx harness check [--plugins [ID…]]` | list and validate the agent definitions, skills and MCP servers; `tx harness check` then validates the installed plugins (manifests, programs, resources, clashes, `requires`, the config, the shipped stamp), and `--plugins` checks only those |
 | `tx update [--bundles DIR --binaries DIR [--link]]` | bring this machine up to this tx: lay the shipped plugins out from a checkout's `plugins/` and its build (with `--bundles`), run the pending update steps, publish the roles, harness and plugin resources under the data directory, run each plugin's updater |
 | `tx engines`, `tx plugins` | the enabled engines; every plugin and whether it is on |
@@ -202,9 +211,21 @@ agent definitions, the tx skills (`tx-sessions`, `tx-artifacts`, `tx-diff-review
 
 ## Configuration
 
-One file, `~/.config/tx-ide/config.yaml` (`tx help` prints the path in use). It is written
-once, when there is none, with every default spelled out; after that it is yours. Every key is
-optional:
+tx's defaults come with the binary and the installed plugins; yours live in `~/.config/tx-ide`,
+which tx never writes. What you put there is laid over the defaults, so it survives every
+update, and a default tx changes later still reaches you for every key you left alone.
+
+| file | what it changes |
+|---|---|
+| `config.yaml` | settings: only the keys you change |
+| `tmux.conf` | the IDE's tmux server: loaded last, so your prefix, bindings and options win |
+| `nvim/tx.lua` | nvim views: run last, after your own nvim config and tx's runtime |
+| `harness/`, `roles/` | your agents, skills, MCP servers and roles; one of the same name replaces a shipped one, and `roles/<ROLE>.local.md` adds to a role |
+| `layouts/`, `themes/` | saved pane layouts; themes of your own |
+
+`tx config` prints the settings in use with your values marked, `tx config --defaults` every
+default with its documentation, `tx config --path` your file (`tx help` and `--config FILE` name
+it too). Every key is optional:
 
 ```yaml
 agent:                         # defaults for `tx create`; a flag given replaces its key
@@ -218,26 +239,23 @@ worktree:
   build_outputs: [target]      # what `tx gc` may delete in an ended agent's worktree
 
 plugins:                       # one entry per plugin (`tx plugins`); a missing entry is on
-  engine-codex: { enabled: true }               # `enabled: false` switches a plugin off
+  engine-codex: { enabled: false }              # switches a plugin off
   assistant:
-    settings: { model: opus, effort: 2 }        # what the assistant runs on
-  artifacts:
-    settings: { editor: nvim }                  # what an artifact's view runs
-  home-themes:
-    settings: { theme: koi }                    # the home's backdrop; `b` in the home picks another
+    settings: { effort: 3 }                     # laid over the plugin's own settings, key by key
 ```
 
-The `plugins:` block of a new file comes from `tx setup`, the verb that chooses which shipped
-plugins an install takes: it lists the plugins that were selected, one `<id>: { enabled: true }`
-each, with the default settings a plugin's `plugin.yaml` declares spelled out under it.
+A plugin's settings and their defaults are the `settings:` of its `plugin.yaml`; `tx config
+--defaults` prints them for every installed plugin. Which shipped plugins an install takes is
+`tx setup`'s to record (`<data>/shipped/.selection`), not this file's:
 `tx setup --bundles <repo>/plugins --preset headless | ide | full` selects by preset (the plugins
 of tier `core`; `core` and `ide`; all of them), `--plugins a,b,c` by id, and on a terminal with
 neither it shows a checklist. `--list` prints every preset with its plugins, among them your own
-in `~/.config/tx-ide/presets/<name>.yaml`. The file that exists is never written again: a plugin
-selected later has no entry, which means on.
+in `~/.config/tx-ide/presets/<name>.yaml`.
 
 `model` applies only to `agent.engine`: with `--engine codex`, Codex runs its own default.
-`engine-claude` also takes `claude_settings`, Claude settings merged into every launch.
+`engine-claude`'s `claude_settings` are Claude Code `settings.json` keys passed to every Claude
+launch: yours are laid over the ones tx ships, a key set to `null` is left out, and your `hooks`
+run next to tx's.
 
 ### Theme
 
@@ -268,7 +286,7 @@ Five directories, XDG style (on macOS too), named after the application: `tx-ide
 
 | directory | default | holds |
 |---|---|---|
-| config | `~/.config/tx-ide` | `config.yaml`; your `roles/`, `harness/`, `layouts/` and `themes/` |
+| config | `~/.config/tx-ide` | yours alone, never written by tx: `config.yaml`, `tmux.conf`, `nvim/tx.lua`, `roles/`, `harness/`, `layouts/`, `themes/` |
 | data | `~/.local/share/tx-ide` | the agent records with their conversation archives, `log.jsonl`, the agents' `worktrees/`, plugin data, the shipped roles and harness, the IDE's tmux config |
 | state | `~/.local/state/tx-ide` | locks, each agent's assembled prompt |
 | cache | `~/.cache/tx-ide` | Claude's built-in tool list, per Claude version |

@@ -4,6 +4,9 @@ description: Prefix+e, edit the name, tags and group of the session in the activ
 tier: ide
 requires: [ide]
 needs: [fzf]
+settings:
+  keys:
+    edit: e                      # prefix+e: edit the name, tags and group of the agent in the active pane
 
 verbs:
   - name: _edit-session

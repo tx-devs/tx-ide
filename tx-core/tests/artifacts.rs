@@ -760,7 +760,7 @@ fn prefix_a_in_an_agent_pane_attaches_the_chosen_artifact() {
         "TX_PLUGIN_TRACE",
         trace.to_str().unwrap(),
     ]);
-    outer_keys(&cli, &["C-a", "a"]);
+    outer_keys(&cli, &["C-b", "a"]);
     assert!(
         cli.wait_for(10, || running_pick(&cli)),
         "the picker never opened"
@@ -787,7 +787,7 @@ fn prefix_a_in_an_agent_pane_attaches_the_chosen_artifact() {
     assert_ne!(common_cli::state_of(&cli, "a"), "ended");
 
     // prefix+a in the view goes back to the controlling session, in the same pane.
-    outer_keys(&cli, &["C-a", "a"]);
+    outer_keys(&cli, &["C-b", "a"]);
     assert!(
         cli.wait_for(10, || client_sessions(&cli) == ["a", "home"]),
         "{:?}",
@@ -795,7 +795,7 @@ fn prefix_a_in_an_agent_pane_attaches_the_chosen_artifact() {
     );
 
     // prefix+a on the same artifact again shows the view already open; no second one.
-    outer_keys(&cli, &["C-a", "a"]);
+    outer_keys(&cli, &["C-b", "a"]);
     assert!(
         cli.wait_for(10, || running_pick(&cli)),
         "the picker never opened"
@@ -834,7 +834,7 @@ fn prefix_a_in_a_short_pane_opens_a_clamped_scrolling_picker() {
     }
     // a's pane keeps 9 of home's 40 rows; the list needs 13 lines plus the popup's 6.
     cli.tmux(&["split-window", "-d", "-v", "-l", "30", "-t", "=home:", "sh"]);
-    outer_keys(&cli, &["C-a", "a"]);
+    outer_keys(&cli, &["C-b", "a"]);
     assert!(
         cli.wait_for(10, || running_pick(&cli)),
         "the picker never opened"

@@ -45,7 +45,12 @@ impl Server {
     }
 
     fn ui(&self) -> Ui {
-        Ui::new(self.socket.clone(), "/dev/null".into(), "/dev/null".into())
+        Ui::new(
+            self.socket.clone(),
+            "/dev/null".into(),
+            "/dev/null".into(),
+            "/dev/null".into(),
+        )
     }
 
     fn pane(&self, session: &str) -> String {

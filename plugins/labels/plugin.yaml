@@ -3,6 +3,9 @@ id: labels
 description: Session names and tags on pane borders, in prefix+s and in whoami.
 tier: core
 needs: [tmux]
+settings:
+  keys:
+    sessions: s                  # prefix+s: every session with its name and tags
 
 verbs:
   - name: _pane-info
