@@ -206,10 +206,10 @@ pub const RETIRED: &[&str] = &["hooks", "history", "menu"];
 pub struct Entry {
     #[serde(default = "yes")]
     enabled: bool,
-    /// A mapping, laid over the settings of the plugin's manifest key by key; anything else is
-    /// refused.
+    /// Laid over the settings of the plugin's manifest key by key
+    /// ([`crate::plugin::index::entries_with_defaults`]).
     #[serde(default)]
-    settings: Option<serde_json::Map<String, serde_json::Value>>,
+    settings: Option<serde_json::Value>,
 }
 
 fn yes() -> bool {
@@ -224,10 +224,7 @@ pub fn entries(plugins: &BTreeMap<String, Entry>) -> BTreeMap<String, crate::plu
         .map(|(id, entry)| {
             let entry = crate::plugin::Entry {
                 enabled: entry.enabled,
-                settings: entry
-                    .settings
-                    .clone()
-                    .map_or(serde_json::Value::Null, serde_json::Value::Object),
+                settings: entry.settings.clone().unwrap_or_default(),
             };
             (id.clone(), entry)
         })

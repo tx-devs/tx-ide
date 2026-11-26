@@ -288,8 +288,9 @@ pub struct Entry {
 /// its defaults, and the config's own are laid over them key by key
 /// ([`crate::plugin::merge_settings`]). So a plugin the config does not name still gets its
 /// defaults, and a default the manifest changes reaches every key the config left alone. The
-/// config's `keys` of an enabled plugin are checked against the manifest's first
-/// ([`crate::keys::check`]).
+/// config's settings of an enabled plugin are checked first: where the manifest's are a mapping
+/// they must be one too, and their `keys` are checked against the manifest's
+/// ([`crate::keys::check`]). A plugin whose manifest has no settings takes any value.
 pub fn entries_with_defaults(
     index: &Index,
     mut entries: BTreeMap<String, Entry>,
@@ -300,6 +301,17 @@ pub fn entries_with_defaults(
         };
         let given = entries.get(&installed.id);
         if let Some(entry) = given.filter(|entry| entry.enabled && !entry.settings.is_null()) {
+            // Anything but a mapping would replace the plugin's own settings whole, its key
+            // table included.
+            if manifest.settings.is_object() && !entry.settings.is_object() {
+                return Err(crate::PluginError::Register {
+                    plugin: installed.id.clone(),
+                    reason: format!(
+                        "settings must be a mapping, as the plugin's own are, got {}",
+                        entry.settings
+                    ),
+                });
+            }
             crate::keys::check(&installed.id, &manifest.settings, &entry.settings)?;
         }
         if manifest.settings.is_null() {
@@ -1033,6 +1045,21 @@ mod tests {
                 .to_string();
             assert!(error.contains("named") && error.contains(names), "{error}");
         }
+        // Anything but a mapping would wipe the defaults; a plugin without any takes any value.
+        let error =
+            entries_with_defaults(&index, entries(&[("named", true, serde_json::json!([1]))]))
+                .unwrap_err()
+                .to_string();
+        assert!(
+            error.contains("named") && error.contains("must be a mapping"),
+            "{error}"
+        );
+        let free = entries_with_defaults(
+            &index,
+            entries(&[("bare", true, serde_json::json!([1, 2]))]),
+        )
+        .unwrap();
+        assert_eq!(free["bare"].settings, serde_json::json!([1, 2]));
         // A plugin without a key table has no action to move.
         let error = entries_with_defaults(
             &index,
