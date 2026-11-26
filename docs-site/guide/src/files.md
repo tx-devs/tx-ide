@@ -47,10 +47,15 @@ line for every plugin program started.
 
 ## What lives where
 
-**config** holds what you write by hand: `config.yaml` (the defaults for `tx create` in its
-`agent:` block, the build output `tx gc` may delete in `worktree:`, the colours in `theme:`,
-and which plugins are on, with their settings, in `plugins:`; `tx setup` writes it once, when there is none, and nothing
-writes it after that), `roles/` (your own
+**config** holds what you write by hand, and tx never writes there: everything in it is laid
+over the defaults that come with the binary and the plugins, so it survives every update.
+`config.yaml` (the defaults for `tx create` in its `agent:` block, the build output `tx gc` may
+delete in `worktree:`, the colours in `theme:`, and which plugins are on, with their settings, in
+`plugins:`) holds only the keys you change: `tx config` prints the result with your values
+marked, and `tx config --defaults` every default (the only thing that edits the file for you is
+`tx switch`, which you run to turn a plugin on or off). `tmux.conf` is sourced last by the IDE's
+tmux server, and `nvim/tx.lua` runs last in every nvim view, so what they set wins over what tx
+ships. `roles/` (your own
 roles, never pruned, overriding a shipped role of the same name), `harness/` (your own
 `agents/`, `skills/` and `mcp.json`, each agent, skill or MCP server overriding a shipped one of the same name), `layouts/` (one `<name>.yaml` per
 saved pane layout, opened by `tx layout open <name>`; `tx layout path <name>` prints the file,
@@ -129,12 +134,10 @@ The result is recorded as `{"preset": <name>, "plugins": [<the resolved ids, sor
 `"preset": null` for `--plugins` and for ticks that are no preset's exact set; of two presets
 that hold the same plugins the checklist records the one last picked with `1`, `2` or `3`. It is
 also printed, for the installer: `plugin<TAB><id>` per id, then `option<TAB>link-dotfiles<TAB>true`
-when that row was ticked. And when `<config>/config.yaml` does not exist it is written: the
-`agent:` and `worktree:` defaults of the repository's `config/tx-ide/config.yaml`, then
-`plugins:` with one entry per selected plugin, `<id>: { enabled: true }`, or with the `settings`
-of its manifest spelled out. A file that is there is never opened for writing.
+when that row was ticked. `<config>/config.yaml` is never written: a plugin's defaults are the
+`settings` of its manifest, read when tx runs.
 
-`--upgrade` asks nothing and never writes `config.yaml`. It resolves the recorded preset again
+`--upgrade` asks nothing. It resolves the recorded preset again
 against `DIR`, so a plugin new in a later version arrives with `full`; a recorded list
 (`"preset": null`) is kept, without the ids that have no bundle any more, each named on stderr;
 an install that recorded nothing becomes `full`. A recorded preset whose file is gone does not

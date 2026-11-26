@@ -61,8 +61,8 @@ pub struct Manifest {
     /// Programs it runs, looked up on `PATH` by `tx harness check`.
     #[serde(default)]
     pub needs: Vec<String>,
-    /// Its default settings, spelled out: only ever used to seed `config.yaml`. `Null` when
-    /// absent.
+    /// Its default settings: what `config.yaml` gives the plugin is laid over them key by key
+    /// ([`crate::plugin::index::entries_with_defaults`]). `Null` when absent.
     #[serde(default)]
     pub settings: Value,
     #[serde(default)]

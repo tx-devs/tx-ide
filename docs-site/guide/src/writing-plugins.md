@@ -93,7 +93,7 @@ The program inherits the caller's environment, with these on top:
 | `TX_SESSION_ENV` | a JSON object; set only when `--env KEY=VALUE` was given |
 | `TX_PLUGIN_API` | `1` |
 | `TX_PLUGIN_ID`, `TX_PLUGIN_DIR`, `TX_PLUGIN_DATA_DIR` | the plugin, its directory, `<data>/plugins/<id>` (not created) |
-| `TX_PLUGIN_SETTINGS` | `plugins.<id>.settings` of `config.yaml` as JSON; `null` without one |
+| `TX_PLUGIN_SETTINGS` | the plugin's settings as JSON: the `settings` of its manifest with `plugins.<id>.settings` of `config.yaml` laid over them key by key; `null` when it has neither |
 | `TX_PLUGIN_GIVEN` | the names, colon-separated, of the variables of this table that the environment of whoever started the program did not hold: what was added on the way, the five `TX_PLUGIN_*` above always among them. A variable the caller already held is passed on resolved and is not listed |
 
 Every global flag of `tx` has such a variable, read when the flag is absent (flag, then variable,
@@ -145,7 +145,7 @@ description: Stop the agent or close the view in the active pane, after a y/n pr
 tier: core                   # core | ide | extra (default extra): what a preset selects
 requires: [ide]              # plugin ids it is of no use without
 needs: [fzf]                 # programs it runs, looked up on PATH by `tx harness check`
-settings: { editor: nvim }   # its default settings, spelled out: used only to seed config.yaml
+settings: { editor: nvim }   # its default settings: the user's plugins.<id>.settings are laid over them
 
 verbs:
   - name: kill               # [a-z0-9_-]+; a leading _ marks it internal
@@ -182,10 +182,10 @@ resources:                   # files it publishes; the name is the path inside t
 
 This version reads, checks and acts on every section: `verbs` (above), `engine` (see [An
 engine](#an-engine)), `on-event` (see [An event sink](#an-event-sink-on-event)), and `update` and
-`resources`, which `tx update` runs and publishes (see [Files](files.md)). `tier`, `requires`,
-`needs` and `settings` are for the installer and `tx harness check`; nothing is refused at run time
-because of them. `tx setup` (see [Files](files.md)) is what uses them when the shipped plugins
-are chosen:
+`resources`, which `tx update` runs and publishes (see [Files](files.md)), and `settings`, the
+plugin's defaults. `tier`, `requires` and `needs` are for the installer and `tx harness check`;
+nothing is refused at run time because of them. `tx setup` (see [Files](files.md)) is what uses
+them when the shipped plugins are chosen:
 
 - `tier` is what a preset selects: `headless` takes tier `core`, `ide` takes `core` and `ide`,
   `full` all three, and a preset of your own names its tiers.
@@ -194,9 +194,11 @@ are chosen:
   reports a requirement that is not installed or is disabled.
 - `needs`: the checklist shows `needs <program> (not found)` for a program that is not on `PATH`,
   and `tx harness check` warns about it. The plugin can still be selected.
-- `settings` are written into a new `config.yaml`, under the plugin's entry, when `tx setup`
-  seeds the file. They are read nowhere else: the plugin's own code holds its defaults, and the
-  manifest spells them out for whoever opens the file.
+- `settings` are the plugin's defaults at run time: what `config.yaml` gives the plugin
+  (`plugins.<id>.settings`, a mapping) is laid over them key by key, a `null` replacing a
+  default, and the result is what the plugin's programs get. Nothing writes them into
+  `config.yaml`; `tx config --defaults` prints the block as the manifest has it, comments
+  included, so write a comment per key.
 
 Rules checked when the manifest is read:
 
