@@ -106,7 +106,7 @@ that last step runs when `chat` is selected).
 
 ## First steps
 
-The prefix is `C-a`.
+The prefix is tmux's own, `C-b`, unless your `~/.config/tx-ide/tmux.conf` sets another.
 
 ```sh
 tx ui attach
@@ -119,8 +119,8 @@ attach also starts the assistant in the background.
   shell, `tx create NAME --cwd DIR --prompt TEXT`. The agent runs in its own worktree of DIR's
   checkout at `HEAD`, as the `developer` definition unless told otherwise, and makes its own
   branch there.
-- **Go in and out**: Enter on an agent nests its terminal into the home's pane. `C-a C-a d`
-  detaches the nested agent and the home comes back; the agent keeps running. `C-a d` detaches the
+- **Go in and out**: Enter on an agent nests its terminal into the home's pane. prefix, prefix, `d`
+  detaches the nested agent and the home comes back; the agent keeps running. prefix, `d` detaches the
   terminal itself; `tx ui attach` brings everything back as it was.
 - **Talk**: type into the agent, or `tx send NAME -- TEXT` from anywhere (run inside an agent, the
   message is signed as that agent). prefix+/ asks the assistant one line from any pane.

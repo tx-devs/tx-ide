@@ -67,7 +67,8 @@ asks nothing, resolves the recorded selection again, rebuilds, and never links a
 (see [Files](files.md)), then each plugin's updater, which rewrites the tmux configuration: it
 names the binary's path.
 
-Once attached, the tmux prefix is `C-a`. The home screen lists your projects, their agents and
+Once attached, the tmux prefix is tmux's own, `C-b`, unless your `~/.config/tx-ide/tmux.conf`
+sets another. The home screen lists your projects, their agents and
 their views; `n` starts a new agent, Enter goes into one, `?` shows every key.
 
 ## Where to go next
