@@ -1,0 +1,23 @@
+[package]
+name = "tx-nuke"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "tx-core plugin: `tx nuke`, the IDE started again from scratch: no agents, no views, a new tx-assistant."
+
+# The plugin as its own program: what `plugin.yaml` names for its verbs.
+[[bin]]
+name = "tx-nuke"
+path = "src/main.rs"
+
+[dependencies]
+tx-core.workspace = true
+tx-client.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

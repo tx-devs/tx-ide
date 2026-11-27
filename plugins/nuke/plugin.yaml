@@ -1,0 +1,19 @@
+api: 1
+id: nuke
+description: "`tx nuke`: the IDE started again from scratch: every agent stopped, every view gone, a new tx-assistant (prefix+Q)."
+tier: ide
+requires: [ide]
+needs: [tmux]
+
+verbs:
+  - name: nuke
+    usage: "nuke [--dry-run]   stop every agent, kill the IDE's tmux server, start it again with a new tx-assistant and attach (prefix+Q); --dry-run: what would be stopped and closed"
+    bin: tx-nuke
+    args: [nuke]
+  - name: _nuke-run
+    usage: "_nuke-run [--no-attach]   nuke's work, run outside the server it kills (internal)"
+    bin: tx-nuke
+    args: [_nuke-run]
+
+resources:
+  - keys/nuke.tmux
