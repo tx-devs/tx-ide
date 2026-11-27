@@ -250,6 +250,23 @@ fn start(core: &TxCore, settings: &Settings) -> Result<AgentId, CoreError> {
     }
 }
 
+/// A new assistant, whatever ran or ended before: a running one is stopped first, an ended one
+/// stays ended (`tx nuke` wants a fresh conversation, not the last one). Under warm's lock, with
+/// its outcome left like a warm's.
+pub fn renew(core: &TxCore, settings: &Settings) -> Result<AgentId, CoreError> {
+    let renewed = start_new(core, settings);
+    record_outcome(core, &renewed);
+    renewed
+}
+
+fn start_new(core: &TxCore, settings: &Settings) -> Result<AgentId, CoreError> {
+    let _lock = warm_lock(core)?;
+    if let Some(id) = running(core)? {
+        core.stop_agent(&id)?;
+    }
+    core.create_agent(create_options(core, settings)?)
+}
+
 /// Delivers `text` to the running assistant (started when there is none) as the operator. Typed
 /// in `pane`: via that pane's session, behind its focus envelope; else via `VIA`. A new
 /// assistant is given `START_TIMEOUT` to report a state past `starting`; the line goes out either
@@ -326,8 +343,9 @@ impl Verb for Assistant {
     }
 
     fn usage(&self) -> &'static str {
-        "assistant warm | ask --from-buffer [--pane PANE] | ask TEXT…   start the tx-assistant \
+        "assistant warm | new | ask --from-buffer [--pane PANE] | ask TEXT…   start the tx-assistant \
          session unless it is running (a stopped one is respawned in place) and print its name; \
+         new: a new one, the running one stopped first, and print its name; \
          deliver a line to it as the operator (from the tx-assistant-input paste buffer, \
          or the words given): typed in PANE's session behind its focus envelope, else via prefix+/"
     }
@@ -336,6 +354,13 @@ impl Verb for Assistant {
         match argv {
             [sub] if sub == "warm" => {
                 let id = warm(core, &self.settings)?;
+                let name = core.get_agent(&id)?.name;
+                writeln!(io.stdout, "{name}")
+                    .map_err(|error| VerbError::Failed(format!("write: {error}")))?;
+                Ok(0)
+            }
+            [sub] if sub == "new" => {
+                let id = renew(core, &self.settings)?;
                 let name = core.get_agent(&id)?.name;
                 writeln!(io.stdout, "{name}")
                     .map_err(|error| VerbError::Failed(format!("write: {error}")))?;
@@ -358,7 +383,7 @@ impl Verb for Assistant {
             _ => {
                 let _ = writeln!(
                     io.stderr,
-                    "usage: tx assistant warm | ask --from-buffer [--pane PANE] | ask TEXT…"
+                    "usage: tx assistant warm | new | ask --from-buffer [--pane PANE] | ask TEXT…"
                 );
                 Ok(2)
             }

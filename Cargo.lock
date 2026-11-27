@@ -2001,6 +2001,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tx-nuke"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tempfile",
+ "tx-client",
+ "tx-core",
+]
+
+[[package]]
 name = "tx-picker"
 version = "0.1.0"
 dependencies = [

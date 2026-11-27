@@ -399,12 +399,16 @@ esac
 header "tx update${TX_APPNAME:+ (TX_APPNAME=$TX_APPNAME)}"
 if ((DRY_RUN)); then
   would "the shipped plugins, the resources, the updaters" "run: $TX_BIN update --bundles $BUNDLES --binaries $TARGET/release"
-elif "$TX_BIN" update --bundles "$BUNDLES" --binaries "$TARGET/release" 2>&1 | sed 's/^/    /'; then
+elif UPDATE_OUTPUT=$("$TX_BIN" update --bundles "$BUNDLES" --binaries "$TARGET/release" 2>&1); then
+  printf '%s\n' "$UPDATE_OUTPUT" | sed 's/^/    /'
   ok "tx update" "done"
 else
+  printf '%s\n' "$UPDATE_OUTPUT" | sed 's/^/    /'
   fail "tx update" "failed"
   exit 1
 fi
+# The last line `tx update` prints when running agents carry what it changed.
+[[ "${UPDATE_OUTPUT:-}" == *"respawn running agents to pick this up"* ]] && NEEDS_RESPAWN=1 || NEEDS_RESPAWN=0
 
 # === 6: what the plugins need ===
 header "What the plugins need"
@@ -627,6 +631,7 @@ ${B}=== Done ===${X}$( ((DRY_RUN)) && printf ' %s(dry run)%s' "$Y" "$X")
 
 ${B}Start the IDE:${X}
   ${D}tx ui attach${X}             the home view, nested into the tx-assistant; prefix+/ asks it from any pane
+$( ((NEEDS_RESPAWN)) && selected nuke && printf '\n%sRunning agents need a respawn:%s\n  %stx nuke%s                  the IDE started again from scratch: every agent stopped, a new\n                           tx-assistant (prefix+Q)\n' "$B" "$X" "$D" "$X")
 
 ${B}Later:${X}
   ${D}git pull && $REPO/install --upgrade${X}

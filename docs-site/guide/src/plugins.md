@@ -29,6 +29,7 @@ tier `ide`, and `full`, the default, adds tier `extra`.
 | `home-themes` | ide | none: hosted by `tx-home` |
 | `ide` | ide | `tx-ide` |
 | `layouts` | ide | `tx-layouts` |
+| `nuke` | ide | `tx-nuke` |
 | `picker` | ide | `tx-picker` |
 | `spawn` | ide | `tx-spawn` |
 | `timeline` | ide | `tx-timeline` |
@@ -172,6 +173,16 @@ program for the border label directly, not through `tx`.
 **`kill`**: `kill <name>` stops an agent through core or closes a view by name. prefix+X does the
 same for the active pane after a confirmation, and refuses the `home` base.
 Tier `core`; its program is `tx-kill`.
+
+**`nuke`**: `nuke` starts the IDE again from scratch: every running agent is stopped through
+core (its record ends, its worktree and conversation stay, so `tx respawn` can bring it back),
+tx's own tmux server is killed with every view in it, a new tx-assistant is created, and the
+terminal is attached to the home view of the fresh server, which loads the current tmux config
+and plugin keys. prefix+Q does the same after a confirmation. Inside the IDE the work runs outside
+the server it kills: the terminal client is detached with `detach-client -E` and runs the
+internal `_nuke-run` in its place. `--dry-run` prints what would be stopped and closed.
+`install --upgrade` offers it when `tx update` says running agents need a respawn.
+Tier `ide` (it requires `ide`); its program is `tx-nuke`.
 
 **`picker`**: `pick` is the fzf session picker on prefix+t: running agents and views in one list,
 newest activity first, with vim-style normal and search modes, a roles panel on TAB and Ctrl-T to
